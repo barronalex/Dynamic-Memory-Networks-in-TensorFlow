@@ -21,10 +21,7 @@ floatX = np.float32
 
 train_mode = True
 
-# Let's set the parameters of our model
-# http://arxiv.org/pdf/1409.2329v4.pdf shows parameters that would achieve near
-# SotA numbers
-
+# from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def add_gradient_noise(t, stddev=1e-3, name=None):
     """
     Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
@@ -354,7 +351,6 @@ class DMN_QA_Model(DMN):
     Returns:
       loss: A 0-d tensor (scalar)
     """
-    ### YOUR CODE HERE
     gate_loss = 0
 
     for i, att in enumerate(self.attentions):
@@ -364,7 +360,6 @@ class DMN_QA_Model(DMN):
 
     loss = self.config.alpha*gate_loss + self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder))
     loss += tf.reduce_sum(tf.pack(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
-    ### END YOUR CODE
     return loss
 
   def get_predictions(self, output):
@@ -393,13 +388,11 @@ class DMN_QA_Model(DMN):
     Returns:
       train_op: The Op for training.
     """
-    ### YOUR CODE HERE
     opt = tf.train.AdamOptimizer(learning_rate=self.config.lr)
     gvs = opt.compute_gradients(loss)
     capped_gvs = [(tf.clip_by_norm(grad, self.config.max_grad_val), var) for grad, var in gvs]
     noised_gvs = [(add_gradient_noise(grad), var) for grad, var in gvs]
     train_op = opt.apply_gradients(gvs)
-    ### END YOUR CODE
     return train_op
   
   def __init__(self, config):
@@ -412,17 +405,11 @@ class DMN_QA_Model(DMN):
     self.output = self.add_projection(self.rnn_outputs)
     self.pred = self.get_predictions(self.output)
   
-    # We want to check how well we correctly predict the next word
-    # We cast o to float64 as there are numerical issues at hand
-    # (i.e. sum(output of softmax) = 1.00000298179 and not 1)
-    # Reshape the output into len(vocab) sized chunks - the -1 says as many as
-    # needed to evenly divide
     self.calculate_loss = self.add_loss_op(self.output)
     self.train_step = self.add_training_op(self.calculate_loss)
 
   def get_question_representation(self, inputs):
     outputs, q_vec = rnn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.question_len_placeholder)
-### END YOUR CODE
     return q_vec
 
   def get_input_representation(self, inputs):
@@ -504,10 +491,7 @@ class DMN_QA_Model(DMN):
       outputs: List of length num_steps, each of whose elements should be
                a tensor of shape (batch_size, hidden_size)
     """
-    ### YOUR CODE HERE
-
     # add embedding split inputs so they can go into rnns
-
     questions, inputs = self.add_embedding()
      
     with tf.variable_scope("question"):
@@ -539,7 +523,6 @@ class DMN_QA_Model(DMN):
 
         output = prev_memory
 
-    ### END YOUR CODE
     return output
 
 
@@ -553,9 +536,6 @@ class DMN_QA_Model(DMN):
     total_loss = []
     accuracy = 0
     
-    #for d in data:
-        #np.random.shuffle(d)
-
     p = np.random.permutation(len(data[0]))
     qp, ip, ql, il, im, a, r = data
     qp, ip, ql, il, im, a, r = qp[p], ip[p], ql[p], il[p], im[p], a[p], r[p] 
@@ -564,8 +544,6 @@ class DMN_QA_Model(DMN):
 
 
     for step in range(total_steps):
-      # We need to pass in the initial state and retrieve the final state to give
-      # the RNN proper history
       feed = {self.question_placeholder: qp[step*config.batch_size:(step+1)*config.batch_size],
               self.input_placeholder: ip[step*config.batch_size:(step+1)*config.batch_size],
               self.question_len_placeholder: ql[step*config.batch_size:(step+1)*config.batch_size],
