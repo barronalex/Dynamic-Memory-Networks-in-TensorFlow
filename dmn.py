@@ -249,7 +249,6 @@ class DMN_QA_Model(DMN):
 
     (Don't change the variable names)
     """
-    ### YOUR CODE HERE
     self.question_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_q_len))
     self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_input_len))
 
@@ -278,11 +277,6 @@ class DMN_QA_Model(DMN):
 
         W_2 = tf.get_variable("W_2", (self.config.embed_size, 1))
         b_2 = tf.get_variable("b_2", 1)
-
-        #W_a = tf.get_variable("W_a", (self.config.embed_size, self.config.embed_size))
-        #b_a = tf.get_variable("b_a", (self.config.embed_size, 1))
-
-    ### END YOUR CODE
 
   def add_embedding(self):
 
@@ -324,7 +318,6 @@ class DMN_QA_Model(DMN):
     Returns:
       output: a matrix of shape (batch_size, fact_embed_size)
     """
-    ### YOUR CODE HERE
     with tf.variable_scope("projection"):
         # in this baseline implementation, we train 3 different output matricies for
         # the subject, relation and object components of a fact
@@ -338,7 +331,6 @@ class DMN_QA_Model(DMN):
 
         output = tf.matmul(rnn_output, U) + b_p
 
-    ### END YOUR CODE
         return output
 
   def add_loss_op(self, output):
@@ -413,7 +405,6 @@ class DMN_QA_Model(DMN):
     return q_vec
 
   def get_input_representation(self, inputs):
-      # batch_size, embed_size
 
     outputs, _ = rnn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
     # pick out gru outputs at the points specfied by input mask
