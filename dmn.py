@@ -1,27 +1,22 @@
-import getpass
-
-
 import sys
 import time
 
 import numpy as np
 import pandas as pd
+import cPickle
+import tables
 from copy import deepcopy
 
 import tensorflow as tf
 from tensorflow.models.rnn import rnn, rnn_cell
 
 import utils
-
 from model import DMN
 from xavier_initializer import xavier_weight_init
-import cPickle
-import tables
 
 floatX = np.float32
 ROOT3 = 1.7320508
 
-train_mode = True
 word2vec_init = False
 
 # from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
@@ -37,40 +32,7 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
 
-class Config(object):
-    """Holds model hyperparams and data information.
-
-    The config class is used to store various hyperparameters and dataset
-    information parameters. Model objects are passed a Config() object at
-    instantiation.
-    """
-    beta = 1
-    alpha = 1
-
-    restore = False
-
-    # fix batch size
-    batch_size = 100
-    embed_size = 80
-    hidden_size = 80
-    max_epochs = 256
-    early_stopping = 20
-    dropout = 0.9
-    drop_grus = True
-    lr = 0.001
-    l2 = 0.001
-    anneal_threshold = 1
-    anneal_by = 1.5
-    num_hops = 5
-    max_grad_val = 10
-    num_gru_layers = 3
-    num_train = 900
-
-    babi_id = "9"
-    babi_test_id = ""
-
-
-class DMN_QA_Model(DMN):
+class DMN(DMN):
 
     def get_lens(self, inputs):
         lens = np.zeros((len(inputs)), dtype=int)
@@ -160,21 +122,7 @@ class DMN_QA_Model(DMN):
         self.valid = self.train_q[self.config.num_train:], self.train_input[self.config.num_train:], self.train_q_lens[self.config.num_train:], self.train_input_lens[self.config.num_train:], self.train_mask[self.config.num_train:], self.train_answers[self.config.num_train:], self.train_rel_labels[self.config.num_train:] 
         self.test = self.test_q, self.test_input, self.test_q_lens, self.test_input_lens, self.test_mask, self.test_answers, self.test_rel_labels 
 
-        #self.visualize()
-        #sys.exit(0)
-
         self.vocab_size = len(self.vocab)
-
-    def print_story(self, story, length):
-        for i in range(length):
-            print self.ivocab[story[i]],
-        print '--------------------------'
-
-
-    def visualize(self):
-        for i in range(10):
-            # first print the story
-            self.print_story(self.train_input[i], self.train_input_lens[i])
 
     def add_placeholders(self):
 
@@ -203,9 +151,9 @@ class DMN_QA_Model(DMN):
         multi_gru = rnn_cell.MultiRNNCell([gru_cell] * self.config.num_gru_layers)
         self.dropm_gru = rnn_cell.DropoutWrapper(multi_gru, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
 
-        with tf.variable_scope("memory/attention"):
+        with tf.variable_scope("memory/attention", initializer=xavier_weight_init()):
             b_1 = tf.get_variable("b_1", (self.config.embed_size,))
-            W_1 = tf.get_variable("W_1", (self.config.embed_size*7, self.config.embed_size))
+            W_1 = tf.get_variable("W_1", (self.config.embed_size*self.config.num_attention_features, self.config.embed_size))
 
             W_2 = tf.get_variable("W_2", (self.config.embed_size, 1))
             b_2 = tf.get_variable("b_2", 1)
@@ -281,6 +229,7 @@ class DMN_QA_Model(DMN):
             gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(att, labels))
 
         loss = self.config.alpha*gate_loss + self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder))
+
         loss += tf.reduce_sum(tf.pack(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
         return loss
 
@@ -316,18 +265,6 @@ class DMN_QA_Model(DMN):
         train_op = opt.apply_gradients(gvs)
         return train_op
   
-    def __init__(self, config):
-
-        self.config = config
-        self.variables_to_save = {}
-        self.load_data(debug=False)
-        self.add_placeholders()
-        self.rnn_outputs = self.add_model()
-        self.output = self.add_projection(self.rnn_outputs)
-        self.pred = self.get_predictions(self.output)
-      
-        self.calculate_loss = self.add_loss_op(self.output)
-        self.train_step = self.add_training_op(self.calculate_loss)
 
     def get_question_representation(self, inputs):
         outputs, q_vec = rnn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.question_len_placeholder)
@@ -421,9 +358,8 @@ class DMN_QA_Model(DMN):
 
         self.attentions = []
 
-        print '==> build episodic memory'
-
         with tf.variable_scope("memory", initializer=xavier_weight_init()):
+            print '==> build episodic memory'
 
             # generate n_hops episodes
             prev_memory = q_vec
@@ -452,21 +388,20 @@ class DMN_QA_Model(DMN):
         total_loss = []
         accuracy = 0
         
+        # shuffle data
         p = np.random.permutation(len(data[0]))
         qp, ip, ql, il, im, a, r = data
         qp, ip, ql, il, im, a, r = qp[p], ip[p], ql[p], il[p], im[p], a[p], r[p] 
 
-
-
-
         for step in range(total_steps):
-            feed = {self.question_placeholder: qp[step*config.batch_size:(step+1)*config.batch_size],
-                  self.input_placeholder: ip[step*config.batch_size:(step+1)*config.batch_size],
-                  self.question_len_placeholder: ql[step*config.batch_size:(step+1)*config.batch_size],
-                  self.input_len_placeholder: il[step*config.batch_size:(step+1)*config.batch_size],
-                  self.input_mask_placeholder: im[step*config.batch_size:(step+1)*config.batch_size],
-                  self.answer_placeholder: a[step*config.batch_size:(step+1)*config.batch_size],
-                  self.rel_label_placeholder: r[step*config.batch_size:(step+1)*config.batch_size],
+            index = range(step*config.batch_size,(step+1)*config.batch_size)
+            feed = {self.question_placeholder: qp[index],
+                  self.input_placeholder: ip[index],
+                  self.question_len_placeholder: ql[index],
+                  self.input_len_placeholder: il[index],
+                  self.input_mask_placeholder: im[index],
+                  self.answer_placeholder: a[index],
+                  self.rel_label_placeholder: r[index],
                   self.dropout_placeholder: dp}
             loss, pred, _ = session.run(
               [self.calculate_loss, self.pred, train_op], feed_dict=feed)
@@ -491,67 +426,17 @@ class DMN_QA_Model(DMN):
         
         return np.mean(total_loss)
 
-def test_RNNLM():
-    config = Config()
 
-    # We create the training model and generative model
-    with tf.variable_scope('RNNLM') as scope:
-        model = DMN_QA_Model(config)
+    def __init__(self, config):
 
-    init = tf.initialize_all_variables()
-    saver = tf.train.Saver()
+        self.config = config
+        self.variables_to_save = {}
+        self.load_data(debug=False)
+        self.add_placeholders()
+        self.rnn_outputs = self.add_model()
+        self.output = self.add_projection(self.rnn_outputs)
+        self.pred = self.get_predictions(self.output)
+      
+        self.calculate_loss = self.add_loss_op(self.output)
+        self.train_step = self.add_training_op(self.calculate_loss)
 
-
-
-    for v in tf.trainable_variables():
-        print v.get_shape()
-
-    with tf.Session() as session:
-        session.run(init)
-
-        best_val_loss = float('inf')
-        # get previous best val loss from file
-
-        best_val_epoch = 0
-
-        prev_epoch_loss = float('inf')
-
-        if model.config.restore:
-            print 'restoring weights'
-            saver.restore(session, 'weights/mem' + str(model.config.babi_id) + 'beta=' + str(model.config.beta) + '.weights')
-
-        if train_mode:
-            for epoch in xrange(config.max_epochs):
-                print 'Epoch {}'.format(epoch)
-                start = time.time()
-                ###
-                train_loss = model.run_epoch(
-                  session, model.train,
-                  train_op=model.train_step, train=True)
-                valid_loss = model.run_epoch(session, model.valid)
-                print 'Training loss: {}'.format(train_loss)
-                print 'Validation loss: {}'.format(valid_loss)
-
-                if valid_loss < best_val_loss:
-                    best_val_loss = valid_loss
-                    best_val_epoch = epoch
-                    saver.save(session, 'weights/mem' + str(model.config.babi_id) + 'beta=' + str(model.config.beta) + '.weights')
-
-                # anneal
-                if train_loss>prev_epoch_loss*model.config.anneal_threshold:
-                    model.config.lr/=model.config.anneal_by
-                    print 'annealed lr to %f'%model.config.lr
-
-                prev_epoch_loss = train_loss
-
-
-                if epoch - best_val_epoch > config.early_stopping:
-                    break
-                print 'Total time: {}'.format(time.time() - start)
-        else:
-            test_loss = model.run_epoch(session, model.test)
-
-
-
-if __name__ == "__main__":
-    test_RNNLM()

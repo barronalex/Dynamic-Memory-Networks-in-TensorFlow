@@ -90,8 +90,8 @@ def get_babi_raw(id, test_id):
         test_id = id 
     babi_name = babi_map[id]
     babi_test_name = babi_map[test_id]
-    babi_train_raw = init_babi(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/en/%s_train.txt' % babi_name))
-    babi_test_raw = init_babi(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/en/%s_test.txt' % babi_test_name))
+    babi_train_raw = init_babi(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/en-10k/%s_train.txt' % babi_name))
+    babi_test_raw = init_babi(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/en-10k/%s_test.txt' % babi_test_name))
     return babi_train_raw, babi_test_raw
 
             
@@ -109,7 +109,7 @@ def load_glove(dim):
     return word2vec
 
 
-def create_vector(word, word2vec, word_vector_size, silent=False):
+def create_vector(word, word2vec, word_vector_size, silent=True):
     # if the word is missing from Glove, create some fake vector and store in glove!
     vector = np.random.uniform(0.0,1.0,(word_vector_size,))
     word2vec[word] = vector
@@ -117,7 +117,7 @@ def create_vector(word, word2vec, word_vector_size, silent=False):
         print "utils.py::create_vector => %s is missing" % word
     return vector
 
-def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="word2vec", silent=False):
+def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="word2vec", silent=True):
     if not word in word2vec:
         create_vector(word, word2vec, word_vector_size, silent)
     if not word in vocab: 
