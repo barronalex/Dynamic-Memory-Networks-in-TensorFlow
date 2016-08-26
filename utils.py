@@ -4,6 +4,9 @@
 import os as os
 import numpy as np
 
+# can be sentence or word
+input_mask_mode = "sentence"
+
 def init_babi(fname):
     print "==> Loading test from %s" % fname
     tasks = []
@@ -114,7 +117,6 @@ def create_vector(word, word2vec, word_vector_size, silent=False):
         print "utils.py::create_vector => %s is missing" % word
     return vector
 
-
 def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="word2vec", silent=False):
     if not word in word2vec:
         create_vector(word, word2vec, word_vector_size, silent)
@@ -132,6 +134,53 @@ def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="wor
     elif to_return == "onehot":
         raise Exception("to_return = 'onehot' is not implemented yet")
 
+# from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
+def process_input(data_raw, floatX, self):
+    questions = []
+    inputs = []
+    answers = []
+    input_masks = []
+    relevant_labels = []
+    for x in data_raw:
+        inp = x["C"].lower().split(' ') 
+        inp = [w for w in inp if len(w) > 0]
+        q = x["Q"].lower().split(' ')
+        q = [w for w in q if len(w) > 0]
+
+        
+        inp_vector = [process_word(word = w, 
+                                    word2vec = self.word2vec, 
+                                    vocab = self.vocab, 
+                                    ivocab = self.ivocab, 
+                                    word_vector_size = self.config.embed_size, 
+                                    to_return = "index") for w in inp]
+                                    
+        q_vector = [process_word(word = w, 
+                                    word2vec = self.word2vec, 
+                                    vocab = self.vocab, 
+                                    ivocab = self.ivocab, 
+                                    word_vector_size = self.config.embed_size, 
+                                    to_return = "index") for w in q]
+        
+        inputs.append(np.vstack(inp_vector).astype(floatX))
+        questions.append(np.vstack(q_vector).astype(floatX))
+        answers.append(process_word(word = x["A"], 
+                                        word2vec = self.word2vec, 
+                                        vocab = self.vocab, 
+                                        ivocab = self.ivocab, 
+                                        word_vector_size = self.config.embed_size, 
+                                        to_return = "index"))
+        # NOTE: here we assume the answer is one word! 
+        if input_mask_mode == 'word':
+            input_masks.append(np.array([index for index, w in enumerate(inp)], dtype=np.int32)) 
+        elif input_mask_mode == 'sentence': 
+            input_masks.append(np.array([index for index, w in enumerate(inp) if w == '.'], dtype=np.int32)) 
+        else:
+            raise Exception("invalid input_mask_mode")
+
+        relevant_labels.append(x["S"])
+    
+    return inputs, questions, answers, input_masks, relevant_labels 
 
 def get_norm(x):
     x = np.array(x)
