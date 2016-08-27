@@ -4,6 +4,7 @@ import numpy as np
 from dmn import DMN
 
 import time
+import argparse
 
 train_mode = True
 
@@ -29,7 +30,7 @@ class Config(object):
     drop_grus = True
     lr = 0.001
     l2 = 0.001
-    anneal_threshold = 1
+    anneal_threshold = 1000
     anneal_by = 1.5
     num_hops = 3
     num_attention_features = 7
@@ -37,12 +38,18 @@ class Config(object):
     num_gru_layers = 1
     num_train = 9000
 
-    babi_id = "2"
+    babi_id = "1"
     babi_test_id = ""
 
 config = Config()
 
-# We create the training model and generative model
+parser = argparse.ArgumentParser()
+parser.add_argument("-b", "--babi_task_id", help="specify babi task 1-20 (default=1)")
+args = parser.parse_args()
+
+config.babi_id = args.babi_task_id
+
+# create model
 with tf.variable_scope('RNNLM') as scope:
     model = DMN(config)
 
@@ -56,10 +63,7 @@ with tf.Session() as session:
     session.run(init)
 
     best_val_loss = float('inf')
-    # get previous best val loss from file
-
     best_val_epoch = 0
-
     prev_epoch_loss = float('inf')
 
     if model.config.restore:

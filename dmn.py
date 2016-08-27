@@ -34,13 +34,13 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
 
 class DMN(DMN):
 
-    def get_lens(self, inputs):
+    def _get_lens(self, inputs):
         lens = np.zeros((len(inputs)), dtype=int)
         for i, t in enumerate(inputs):
             lens[i] = t.shape[0]
         return lens
 
-    def pad_inputs(self, inputs, lens, max_len, mask=False):
+    def _pad_inputs(self, inputs, lens, max_len, mask=False):
         if mask:
             padded = [np.pad(inp, (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
             return np.stack(padded, axis=0)
@@ -73,9 +73,9 @@ class DMN(DMN):
         else:
             self.word_embedding = np.random.uniform(-ROOT3, ROOT3, (len(self.ivocab), self.config.embed_size))
 
-        self.train_input_lens = self.get_lens(train_input)
-        self.train_q_lens = self.get_lens(train_q)
-        self.train_mask_lens = self.get_lens(train_input_mask)
+        self.train_input_lens = self._get_lens(train_input)
+        self.train_q_lens = self._get_lens(train_q)
+        self.train_mask_lens = self._get_lens(train_input_mask)
 
         max_train_input_len = np.max(self.train_input_lens)
         max_train_q_len = np.max(self.train_q_lens)
@@ -84,9 +84,9 @@ class DMN(DMN):
         print '==> get test inputs'
         test_input, test_q, test_answer, test_input_mask, test_rel_labels = utils.process_input(self.babi_test_raw, floatX, self)
 
-        self.test_input_lens = self.get_lens(test_input)
-        self.test_q_lens = self.get_lens(test_q)
-        self.test_mask_lens = self.get_lens(test_input_mask)
+        self.test_input_lens = self._get_lens(test_input)
+        self.test_q_lens = self._get_lens(test_q)
+        self.test_mask_lens = self._get_lens(test_input_mask)
 
         max_test_input_len = np.max(self.test_input_lens)
         max_test_q_len = np.max(self.test_q_lens)
@@ -97,13 +97,13 @@ class DMN(DMN):
         self.max_mask_len = np.max([max_train_mask_len, max_test_mask_len])
 
         # first pad out arrays to max
-        self.train_input = self.pad_inputs(train_input, self.train_input_lens, self.max_input_len)
-        self.train_q = self.pad_inputs(train_q, self.train_q_lens, self.max_q_len)
-        self.train_mask = self.pad_inputs(train_input_mask, self.train_mask_lens, self.max_mask_len, mask=True)
+        self.train_input = self._pad_inputs(train_input, self.train_input_lens, self.max_input_len)
+        self.train_q = self._pad_inputs(train_q, self.train_q_lens, self.max_q_len)
+        self.train_mask = self._pad_inputs(train_input_mask, self.train_mask_lens, self.max_mask_len, mask=True)
 
-        self.test_input = self.pad_inputs(test_input, self.test_input_lens, self.max_input_len)
-        self.test_q = self.pad_inputs(test_q, self.test_q_lens, self.max_q_len)
-        self.test_mask = self.pad_inputs(test_input_mask, self.test_mask_lens, self.max_mask_len, mask=True)
+        self.test_input = self._pad_inputs(test_input, self.test_input_lens, self.max_input_len)
+        self.test_q = self._pad_inputs(test_q, self.test_q_lens, self.max_q_len)
+        self.test_mask = self._pad_inputs(test_input_mask, self.test_mask_lens, self.max_mask_len, mask=True)
 
         self.train_answers = np.stack(train_answer)
         self.test_answers = np.stack(test_answer)
@@ -117,7 +117,7 @@ class DMN(DMN):
         for i, tt in enumerate(test_rel_labels):
             self.test_rel_labels[i] = np.array(tt, dtype=int)
 
-            
+        # figure out how use map/zip 
         self.train = self.train_q[:self.config.num_train], self.train_input[:self.config.num_train], self.train_q_lens[:self.config.num_train], self.train_input_lens[:self.config.num_train], self.train_mask[:self.config.num_train], self.train_answers[:self.config.num_train], self.train_rel_labels[:self.config.num_train] 
         self.valid = self.train_q[self.config.num_train:], self.train_input[self.config.num_train:], self.train_q_lens[self.config.num_train:], self.train_input_lens[self.config.num_train:], self.train_mask[self.config.num_train:], self.train_answers[self.config.num_train:], self.train_rel_labels[self.config.num_train:] 
         self.test = self.test_q, self.test_input, self.test_q_lens, self.test_input_lens, self.test_mask, self.test_answers, self.test_rel_labels 

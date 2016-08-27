@@ -2,3 +2,4 @@
 /papers
 /weights
 *.swp
+*.pyc
