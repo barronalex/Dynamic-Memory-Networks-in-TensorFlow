@@ -8,7 +8,6 @@ import tables
 from copy import deepcopy
 
 import tensorflow as tf
-from tensorflow.models.rnn import rnn, rnn_cell
 
 import utils
 from model import DMN
@@ -18,6 +17,41 @@ floatX = np.float32
 ROOT3 = 1.7320508
 
 word2vec_init = False
+
+class Config(object):
+    """Holds model hyperparams and data information.
+
+    The config class is used to store various hyperparameters and dataset
+    information parameters. Model objects are passed a Config() object at
+    instantiation.
+    """
+
+    # set to true to train with supporting facts labelled
+    strong_supervision = False
+    # set to zero with strong supervision to only train gates
+    beta = 1
+
+
+    # fix batch size
+    batch_size = 100
+    embed_size = 80
+    hidden_size = 80
+    max_epochs = 256
+    early_stopping = 20
+    dropout = 0.9
+    drop_grus = True
+    lr = 0.001
+    l2 = 0.001
+    anneal_threshold = 1000
+    anneal_by = 1.5
+    num_hops = 3
+    num_attention_features = 7
+    max_grad_val = 10
+    num_gru_layers = 1
+    num_train = 9000
+
+    babi_id = "1"
+    babi_test_id = ""
 
 # from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def _add_gradient_noise(t, stddev=1e-3, name=None):
@@ -100,7 +134,6 @@ class DMN(DMN):
         self.train_input = self._pad_inputs(train_input, self.train_input_lens, self.max_input_len)
         self.train_q = self._pad_inputs(train_q, self.train_q_lens, self.max_q_len)
         self.train_mask = self._pad_inputs(train_input_mask, self.train_mask_lens, self.max_mask_len, mask=True)
-
         self.test_input = self._pad_inputs(test_input, self.test_input_lens, self.max_input_len)
         self.test_q = self._pad_inputs(test_q, self.test_q_lens, self.max_q_len)
         self.test_mask = self._pad_inputs(test_input_mask, self.test_mask_lens, self.max_mask_len, mask=True)
@@ -140,16 +173,16 @@ class DMN(DMN):
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
 
-        gru_cell = rnn_cell.GRUCell(self.config.hidden_size)
+        gru_cell = tf.nn.rnn_cell.GRUCell(self.config.hidden_size)
 
         # apply droput to grus if flag set
         if self.config.drop_grus:
-            self.drop_gru = rnn_cell.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
+            self.drop_gru = tf.nn.rnn_cell.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
         else:
             self.drop_gru = gru_cell
 
-        multi_gru = rnn_cell.MultiRNNCell([gru_cell] * self.config.num_gru_layers)
-        self.dropm_gru = rnn_cell.DropoutWrapper(multi_gru, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
+        multi_gru = tf.nn.rnn_cell.MultiRNNCell([gru_cell] * self.config.num_gru_layers)
+        self.dropm_gru = tf.nn.rnn_cell.DropoutWrapper(multi_gru, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
 
         with tf.variable_scope("memory/attention", initializer=xavier_weight_init()):
             b_1 = tf.get_variable("b_1", (self.config.embed_size,))
@@ -221,14 +254,15 @@ class DMN(DMN):
         Returns:
           loss: A 0-d tensor (scalar)
         """
+
         gate_loss = 0
+        if self.config.strong_supervision:
+            for i, att in enumerate(self.attentions):
+                #if i == self.rel_label_placeholder.get_shape()[1]: break
+                labels = tf.gather(tf.transpose(self.rel_label_placeholder), 0)
+                gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(att, labels))
 
-        for i, att in enumerate(self.attentions):
-            #if i == self.rel_label_placeholder.get_shape()[1]: break
-            labels = tf.gather(tf.transpose(self.rel_label_placeholder), 0)
-            gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(att, labels))
-
-        loss = self.config.alpha*gate_loss + self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder))
+        loss = self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder)) + gate_loss
 
         loss += tf.reduce_sum(tf.pack(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
         return loss
@@ -267,19 +301,18 @@ class DMN(DMN):
   
 
     def get_question_representation(self, inputs):
-        outputs, q_vec = rnn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.question_len_placeholder)
+        outputs, q_vec = tf.nn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.question_len_placeholder)
         return q_vec
 
     def get_input_representation(self, inputs):
 
-        outputs, _ = rnn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
+        outputs, _ = tf.nn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
         # pick out gru outputs at the points specfied by input mask
         outputs = tf.pack(outputs)
 
         outputs = tf.split(1, self.config.batch_size, outputs)
 
         outputs = [tf.gather(out, tf.gather(self.input_mask_placeholder, i)) for i, out in enumerate(outputs)]
-
 
         fact_vecs = tf.concat(1, outputs)
 
@@ -370,7 +403,7 @@ class DMN(DMN):
                 episode = self.generate_episode(prev_memory, q_vec, fact_vecs)
 
                 # do a GRU step to get the new memory
-                _, prev_memory = rnn.rnn(self.drop_gru, [prev_memory, episode], dtype=np.float32)
+                _, prev_memory = tf.nn.rnn(self.drop_gru, [prev_memory, episode], dtype=np.float32)
                 tf.get_variable_scope().reuse_variables()
 
             output = prev_memory
