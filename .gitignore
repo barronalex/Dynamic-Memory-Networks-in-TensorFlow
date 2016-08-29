@@ -1,5 +1,6 @@
 /data
 /papers
 /weights
+/summaries
 *.swp
 *.pyc

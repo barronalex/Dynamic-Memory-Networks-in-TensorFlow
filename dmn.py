@@ -26,11 +26,8 @@ class Config(object):
     instantiation.
     """
 
-    # set to true to train with supporting facts labelled
-    strong_supervision = False
     # set to zero with strong supervision to only train gates
     beta = 1
-
 
     # fix batch size
     batch_size = 100
@@ -150,9 +147,10 @@ class DMN(DMN):
         for i, tt in enumerate(test_rel_labels):
             self.test_rel_labels[i] = np.array(tt, dtype=int)
 
-        # figure out how use map/zip 
         self.train = self.train_q[:self.config.num_train], self.train_input[:self.config.num_train], self.train_q_lens[:self.config.num_train], self.train_input_lens[:self.config.num_train], self.train_mask[:self.config.num_train], self.train_answers[:self.config.num_train], self.train_rel_labels[:self.config.num_train] 
+
         self.valid = self.train_q[self.config.num_train:], self.train_input[self.config.num_train:], self.train_q_lens[self.config.num_train:], self.train_input_lens[self.config.num_train:], self.train_mask[self.config.num_train:], self.train_answers[self.config.num_train:], self.train_rel_labels[self.config.num_train:] 
+
         self.test = self.test_q, self.test_input, self.test_q_lens, self.test_input_lens, self.test_mask, self.test_answers, self.test_rel_labels 
 
         self.vocab_size = len(self.vocab)
@@ -213,7 +211,7 @@ class DMN(DMN):
 
         return questions, inputs
   
-    def add_projection(self, rnn_output):
+    def add_answer_module(self, rnn_output):
         """Adds a projection layer.
 
         The projection layer transforms the hidden representation to a distribution
@@ -265,6 +263,9 @@ class DMN(DMN):
         loss = self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder)) + gate_loss
 
         loss += tf.reduce_sum(tf.pack(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
+
+        tf.scalar_summary('loss', loss)
+
         return loss
 
     def get_predictions(self, output):
@@ -411,7 +412,7 @@ class DMN(DMN):
         return output
 
 
-    def run_epoch(self, session, data, train_op=None, verbose=2, train=False):
+    def run_epoch(self, session, data, num_epoch=0, train_writer=None, train_op=None, verbose=2, train=False):
         config = self.config
         dp = config.dropout
         if not train_op:
@@ -436,8 +437,10 @@ class DMN(DMN):
                   self.answer_placeholder: a[index],
                   self.rel_label_placeholder: r[index],
                   self.dropout_placeholder: dp}
-            loss, pred, _ = session.run(
-              [self.calculate_loss, self.pred, train_op], feed_dict=feed)
+            loss, pred, summary, _ = session.run(
+              [self.calculate_loss, self.pred, self.merged, train_op], feed_dict=feed)
+
+            train_writer.add_summary(summary, num_epoch*total_steps + step)
 
             answers = a[step*config.batch_size:(step+1)*config.batch_size]
             accuracy += np.sum(pred == answers)/float(len(answers))
@@ -467,9 +470,9 @@ class DMN(DMN):
         self.load_data(debug=False)
         self.add_placeholders()
         self.rnn_outputs = self.add_model()
-        self.output = self.add_projection(self.rnn_outputs)
+        self.output = self.add_answer_module(self.rnn_outputs)
         self.pred = self.get_predictions(self.output)
-      
         self.calculate_loss = self.add_loss_op(self.output)
         self.train_step = self.add_training_op(self.calculate_loss)
+        self.merged = tf.merge_all_summaries()
 
