@@ -19,31 +19,32 @@ ROOT3 = 1.7320508
 word2vec_init = False
 
 class Config(object):
-    """Holds model hyperparams and data information."""
+    """Holds model hyperparams and data information.
+
+    The config class is used to store various hyperparameters and dataset
+    information parameters. Model objects are passed a Config() object at
+    instantiation.
+    """
 
     # set to zero with strong supervision to only train gates
     beta = 1
 
+    # fix batch size
     batch_size = 100
     embed_size = 80
     hidden_size = 80
-
     max_epochs = 256
     early_stopping = 20
-
     dropout = 0.9
+    drop_grus = True
     lr = 0.001
     l2 = 0.001
-
-    drop_grus = True
-    num_gru_layers = 1
-
     anneal_threshold = 1000
     anneal_by = 1.5
-
     num_hops = 3
     num_attention_features = 7
     max_grad_val = 10
+    num_gru_layers = 1
     num_train = 9000
 
     babi_id = "1"
@@ -62,7 +63,7 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
 
-class DMN(DMN):
+class DMN_PLUS(DMN):
 
     def _get_lens(self, inputs):
         lens = np.zeros((len(inputs)), dtype=int)
@@ -79,6 +80,7 @@ class DMN(DMN):
    
 
     def load_data(self, debug=False):
+
         """Loads starter word-vectors and train/dev/test data."""
 
         self.vocab = {}
@@ -154,7 +156,6 @@ class DMN(DMN):
         self.vocab_size = len(self.vocab)
 
     def add_placeholders(self):
-        """adds data placeholders for TF graph"""
 
         self.question_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_q_len))
         self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_input_len))
@@ -189,7 +190,6 @@ class DMN(DMN):
             b_2 = tf.get_variable("b_2", 1)
 
     def add_embedding(self):
-        """add embedding to question and fact inputs"""
 
         embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
 
@@ -212,8 +212,26 @@ class DMN(DMN):
         return questions, inputs
   
     def add_answer_module(self, rnn_output):
-        """Linear softmax answer module"""
+        """Adds a projection layer.
+
+        The projection layer transforms the hidden representation to a distribution
+        over the vocabulary.
+
+        Hint: Here are the dimensions of the variables you will need to
+              create 
+              
+              U:   (hidden_size, len(vocab))
+              b_2: (len(vocab),)
+
+        Args:
+          rnn_output: a matrix of dimension (batch_size, hidden_size)
+                       a tensor of shape (batch_size, embed_size).
+        Returns:
+          output: a matrix of shape (batch_size, fact_embed_size)
+        """
         with tf.variable_scope("projection"):
+            # in this baseline implementation, we train 3 different output matricies for
+            # the subject, relation and object components of a fact
             U = tf.get_variable("U", (self.config.embed_size, self.vocab_size))
             b_p = tf.get_variable("b_p", (self.vocab_size,))
 
@@ -225,7 +243,15 @@ class DMN(DMN):
             return output
 
     def add_loss_op(self, output):
-        """Adds loss with optional gate loss if supporting facts (strong supervision) are used"""
+
+        """Adds loss ops to the computational graph.
+
+
+        Args:
+          output: A tensor of shape (batch_size, fact_embed_size)
+        Returns:
+          loss: A 0-d tensor (scalar)
+        """
 
         gate_loss = 0
         if self.config.strong_supervision:
@@ -415,8 +441,7 @@ class DMN(DMN):
             loss, pred, summary, _ = session.run(
               [self.calculate_loss, self.pred, self.merged, train_op], feed_dict=feed)
 
-            if train_writer is not None:
-                train_writer.add_summary(summary, num_epoch*total_steps + step)
+            train_writer.add_summary(summary, num_epoch*total_steps + step)
 
             answers = a[step*config.batch_size:(step+1)*config.batch_size]
             accuracy += np.sum(pred == answers)/float(len(answers))

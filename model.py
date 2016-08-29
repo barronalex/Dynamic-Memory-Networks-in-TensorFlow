@@ -1,16 +1,11 @@
-class Model(object):
-  """Abstracts a Tensorflow graph for a learning task.
+class DMN(object):
+  """Abstracts a Tensorflow graph for DMN models.
 
-  We use various Model classes as usual abstractions to encapsulate tensorflow
-  computational graphs. Each algorithm you will construct in this homework will
-  inherit from a Model object.
+  Adds ability to do embedding.
   """
-
   def load_data(self):
-    """Loads data from disk and stores it in memory.
+    """Loads data from disk and stores it in memory."""
 
-    Feel free to add instance variables to Model object that store loaded data.    
-    """
     raise NotImplementedError("Each Model must re-implement this method.")
 
   def add_placeholders(self):
@@ -24,29 +19,6 @@ class Model(object):
     See for more information:
 
     https://www.tensorflow.org/versions/r0.7/api_docs/python/io_ops.html#placeholders
-    """
-    raise NotImplementedError("Each Model must re-implement this method.")
-
-  def create_feed_dict(self, input_batch, label_batch):
-    """Creates the feed_dict for training the given step.
-
-    A feed_dict takes the form of:
-
-    feed_dict = {
-        <placeholder>: <tensor of values to be passed for placeholder>,
-        ....
-    }
-  
-    If label_batch is None, then no labels are added to feed_dict.
-
-    Hint: The keys for the feed_dict should be a subset of the placeholder
-          tensors created in add_placeholders.
-    
-    Args:
-      input_batch: A batch of input data.
-      label_batch: A batch of label data.
-    Returns:
-      feed_dict: The feed dictionary mapping from placeholders to values.
     """
     raise NotImplementedError("Each Model must re-implement this method.")
 
@@ -87,36 +59,6 @@ class Model(object):
     """
     raise NotImplementedError("Each Model must re-implement this method.")
 
-  def fit(self, sess, input_data, input_labels):
-    """Fit model on provided data.
-
-    Args:
-      sess: tf.Session()
-      input_data: np.ndarray of shape (n_samples, n_features)
-      input_labels: np.ndarray of shape (n_samples, n_classes)
-    Returns:
-      losses: list of loss per epoch
-    """
-    raise NotImplementedError("Each Model must re-implement this method.")
-
-  def predict(self, sess, input_data, input_labels=None):
-    """Make predictions from the provided model.
-    Args:
-      sess: tf.Session()
-      input_data: np.ndarray of shape (n_samples, n_features)
-      input_labels: np.ndarray of shape (n_samples, n_classes)
-    Returns:
-      average_loss: Average loss of model.
-      predictions: Predictions of model on input_data
-    """
-    raise NotImplementedError("Each Model must re-implement this method.")
-
-class DMN(Model):
-  """Abstracts a Tensorflow graph for DMN models.
-
-  Adds ability to do embedding.
-  """
-
   def get_question_representation(self, inputs):
     raise NotImplementedError("Each Model must re-implement this method.")
   
@@ -126,9 +68,4 @@ class DMN(Model):
   def generate_episode(self, memory, q_vec, cands):
     raise NotImplementedError("Each Model must re-implement this method.")
 
-class LanguageModel(Model):
-  def add_embedding(self):
-    """Add embedding layer. that maps from vocabulary to vectors.
-    """
-    raise NotImplementedError("Each Model must re-implement this method.")
 
