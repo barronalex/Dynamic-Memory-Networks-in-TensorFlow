@@ -308,6 +308,7 @@ class DMN(DMN):
     def get_input_representation(self, inputs):
 
         outputs, _ = tf.nn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
+
         # pick out gru outputs at the points specfied by input mask
         outputs = tf.pack(outputs)
 
