@@ -81,26 +81,26 @@ class DMN(DMN):
     def load_data(self, debug=False):
         """Loads starter word-vectors and train/dev/test data."""
 
-        self.vocab = {}
-        self.ivocab = {}
+        vocab = {}
+        ivocab = {}
 
         self.babi_train_raw, self.babi_test_raw = utils.get_babi_raw(self.config.babi_id, self.config.babi_test_id)
 
         if word2vec_init:
             assert self.config.embed_size == 100
-            self.word2vec = utils.load_glove(self.config.embed_size)
+            word2vec = utils.load_glove(self.config.embed_size)
         else:
-            self.word2vec = {}
+            word2vec = {}
 
         print '==> get train inputs'
-        train_input, train_q, train_answer, train_input_mask, train_rel_labels = utils.process_input(self.babi_train_raw, floatX, self)
+        train_input, train_q, train_answer, train_input_mask, train_rel_labels = utils.process_input(self.babi_train_raw, floatX, word2vec, vocab, ivocab, self.config.embed_size)
 
         #convert word2vec to matrix representation
         if word2vec_init:
             assert self.config.embed_size == 100
-            self.word_embedding = utils.create_embedding(self.word2vec, self.ivocab, self.config.embed_size)
+            self.word_embedding = utils.create_embedding(word2vec, ivocab, self.config.embed_size)
         else:
-            self.word_embedding = np.random.uniform(-ROOT3, ROOT3, (len(self.ivocab), self.config.embed_size))
+            self.word_embedding = np.random.uniform(-ROOT3, ROOT3, (len(ivocab), self.config.embed_size))
 
         self.train_input_lens = self._get_lens(train_input)
         self.train_q_lens = self._get_lens(train_q)
@@ -111,7 +111,7 @@ class DMN(DMN):
         max_train_mask_len = np.max(self.train_mask_lens)
 
         print '==> get test inputs'
-        test_input, test_q, test_answer, test_input_mask, test_rel_labels = utils.process_input(self.babi_test_raw, floatX, self)
+        test_input, test_q, test_answer, test_input_mask, test_rel_labels = utils.process_input(self.babi_test_raw, floatX, word2vec, vocab, ivocab, self.config.embed_size)
 
         self.test_input_lens = self._get_lens(test_input)
         self.test_q_lens = self._get_lens(test_q)
@@ -125,7 +125,7 @@ class DMN(DMN):
         self.max_input_len = np.max([max_train_input_len, max_test_input_len])
         self.max_mask_len = np.max([max_train_mask_len, max_test_mask_len])
 
-        # first pad out arrays to max
+        #pad out arrays to max
         self.train_input = self._pad_inputs(train_input, self.train_input_lens, self.max_input_len)
         self.train_q = self._pad_inputs(train_q, self.train_q_lens, self.max_q_len)
         self.train_mask = self._pad_inputs(train_input_mask, self.train_mask_lens, self.max_mask_len, mask=True)
@@ -151,7 +151,7 @@ class DMN(DMN):
 
         self.test = self.test_q, self.test_input, self.test_q_lens, self.test_input_lens, self.test_mask, self.test_answers, self.test_rel_labels 
 
-        self.vocab_size = len(self.vocab)
+        self.vocab_size = len(vocab)
 
     def add_placeholders(self):
         """adds data placeholders for TF graph"""
@@ -211,16 +211,16 @@ class DMN(DMN):
 
         return questions, inputs
   
-    def add_answer_module(self, rnn_output):
+    def add_answer_module(self, rnn_output, q_vec):
         """Linear softmax answer module"""
-        with tf.variable_scope("projection"):
-            U = tf.get_variable("U", (self.config.embed_size, self.vocab_size))
+        with tf.variable_scope("answer"):
+            U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
             b_p = tf.get_variable("b_p", (self.vocab_size,))
 
             reg = self.config.l2*tf.nn.l2_loss(U)
             tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
 
-            output = tf.matmul(rnn_output, U) + b_p
+            output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
 
             return output
 
@@ -384,7 +384,7 @@ class DMN(DMN):
 
             output = prev_memory
 
-        return output
+        return output, q_vec
 
 
     def run_epoch(self, session, data, num_epoch=0, train_writer=None, train_op=None, verbose=2, train=False):
@@ -445,8 +445,8 @@ class DMN(DMN):
         self.variables_to_save = {}
         self.load_data(debug=False)
         self.add_placeholders()
-        self.rnn_outputs = self.add_model()
-        self.output = self.add_answer_module(self.rnn_outputs)
+        self.rnn_outputs, self.q_vec = self.add_model()
+        self.output = self.add_answer_module(self.rnn_outputs, self.q_vec)
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)
         self.train_step = self.add_training_op(self.calculate_loss)

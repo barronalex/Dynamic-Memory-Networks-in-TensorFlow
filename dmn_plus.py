@@ -50,7 +50,6 @@ class Config(object):
     babi_id = "1"
     babi_test_id = ""
 
-# from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def _add_gradient_noise(t, stddev=1e-3, name=None):
     """
     Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
@@ -77,6 +76,10 @@ class DMN_PLUS(DMN):
             return np.stack(padded, axis=0)
         padded = [np.pad(np.squeeze(inp, axis=1), (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
         return np.stack(padded, axis=0)
+
+    # precompute "l" vector for each example for positional encoding
+    def add_positional_encoding(inputs, input_mask):
+
    
 
     def load_data(self, debug=False):
