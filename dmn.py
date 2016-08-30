@@ -13,11 +13,6 @@ import utils
 from model import DMN
 from xavier_initializer import xavier_weight_init
 
-floatX = np.float32
-ROOT3 = 1.7320508
-
-word2vec_init = False
-
 class Config(object):
     """Holds model hyperparams and data information."""
 
@@ -27,6 +22,9 @@ class Config(object):
     batch_size = 100
     embed_size = 80
     hidden_size = 80
+
+    word2vec_init = False
+    embedding_init = 1.7320508 # root 3
 
     max_epochs = 256
     early_stopping = 20
@@ -46,6 +44,8 @@ class Config(object):
     max_grad_val = 10
     num_train = 9000
 
+    floatX = np.float32
+
     babi_id = "1"
     babi_test_id = ""
 
@@ -64,94 +64,9 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
 
 class DMN(DMN):
 
-    def _get_lens(self, inputs):
-        lens = np.zeros((len(inputs)), dtype=int)
-        for i, t in enumerate(inputs):
-            lens[i] = t.shape[0]
-        return lens
-
-    def _pad_inputs(self, inputs, lens, max_len, mask=False):
-        if mask:
-            padded = [np.pad(inp, (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
-            return np.stack(padded, axis=0)
-        padded = [np.pad(np.squeeze(inp, axis=1), (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
-        return np.stack(padded, axis=0)
-   
-
     def load_data(self, debug=False):
         """Loads starter word-vectors and train/dev/test data."""
-
-        vocab = {}
-        ivocab = {}
-
-        self.babi_train_raw, self.babi_test_raw = utils.get_babi_raw(self.config.babi_id, self.config.babi_test_id)
-
-        if word2vec_init:
-            assert self.config.embed_size == 100
-            word2vec = utils.load_glove(self.config.embed_size)
-        else:
-            word2vec = {}
-
-        print '==> get train inputs'
-        train_input, train_q, train_answer, train_input_mask, train_rel_labels = utils.process_input(self.babi_train_raw, floatX, word2vec, vocab, ivocab, self.config.embed_size)
-
-        #convert word2vec to matrix representation
-        if word2vec_init:
-            assert self.config.embed_size == 100
-            self.word_embedding = utils.create_embedding(word2vec, ivocab, self.config.embed_size)
-        else:
-            self.word_embedding = np.random.uniform(-ROOT3, ROOT3, (len(ivocab), self.config.embed_size))
-
-        self.train_input_lens = self._get_lens(train_input)
-        self.train_q_lens = self._get_lens(train_q)
-        self.train_mask_lens = self._get_lens(train_input_mask)
-
-        max_train_input_len = np.max(self.train_input_lens)
-        max_train_q_len = np.max(self.train_q_lens)
-        max_train_mask_len = np.max(self.train_mask_lens)
-
-        print '==> get test inputs'
-        test_input, test_q, test_answer, test_input_mask, test_rel_labels = utils.process_input(self.babi_test_raw, floatX, word2vec, vocab, ivocab, self.config.embed_size)
-
-        self.test_input_lens = self._get_lens(test_input)
-        self.test_q_lens = self._get_lens(test_q)
-        self.test_mask_lens = self._get_lens(test_input_mask)
-
-        max_test_input_len = np.max(self.test_input_lens)
-        max_test_q_len = np.max(self.test_q_lens)
-        max_test_mask_len = np.max(self.test_mask_lens)
-
-        self.max_q_len = np.max([max_train_q_len, max_test_q_len])
-        self.max_input_len = np.max([max_train_input_len, max_test_input_len])
-        self.max_mask_len = np.max([max_train_mask_len, max_test_mask_len])
-
-        #pad out arrays to max
-        self.train_input = self._pad_inputs(train_input, self.train_input_lens, self.max_input_len)
-        self.train_q = self._pad_inputs(train_q, self.train_q_lens, self.max_q_len)
-        self.train_mask = self._pad_inputs(train_input_mask, self.train_mask_lens, self.max_mask_len, mask=True)
-        self.test_input = self._pad_inputs(test_input, self.test_input_lens, self.max_input_len)
-        self.test_q = self._pad_inputs(test_q, self.test_q_lens, self.max_q_len)
-        self.test_mask = self._pad_inputs(test_input_mask, self.test_mask_lens, self.max_mask_len, mask=True)
-
-        self.train_answers = np.stack(train_answer)
-        self.test_answers = np.stack(test_answer)
-
-        self.train_rel_labels = np.zeros((len(train_rel_labels), len(train_rel_labels[0])))
-        self.test_rel_labels = np.zeros((len(test_rel_labels), len(test_rel_labels[0])))
-
-        for i, tt in enumerate(train_rel_labels):
-            self.train_rel_labels[i] = np.array(tt, dtype=int)
-
-        for i, tt in enumerate(test_rel_labels):
-            self.test_rel_labels[i] = np.array(tt, dtype=int)
-
-        self.train = self.train_q[:self.config.num_train], self.train_input[:self.config.num_train], self.train_q_lens[:self.config.num_train], self.train_input_lens[:self.config.num_train], self.train_mask[:self.config.num_train], self.train_answers[:self.config.num_train], self.train_rel_labels[:self.config.num_train] 
-
-        self.valid = self.train_q[self.config.num_train:], self.train_input[self.config.num_train:], self.train_q_lens[self.config.num_train:], self.train_input_lens[self.config.num_train:], self.train_mask[self.config.num_train:], self.train_answers[self.config.num_train:], self.train_rel_labels[self.config.num_train:] 
-
-        self.test = self.test_q, self.test_input, self.test_q_lens, self.test_input_lens, self.test_mask, self.test_answers, self.test_rel_labels 
-
-        self.vocab_size = len(vocab)
+        self.train, self.valid, self.test, self.word_embedding, self.max_q_len, self.max_input_len, self.max_mask_len, self.num_supporting_facts, self.vocab_size = utils.load_babi(self.config)
 
     def add_placeholders(self):
         """adds data placeholders for TF graph"""
@@ -166,7 +81,7 @@ class DMN(DMN):
 
         self.answer_placeholder = tf.placeholder(tf.int64, shape=(self.config.batch_size,))
 
-        self.rel_label_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.train_rel_labels.shape[1]))
+        self.rel_label_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.num_supporting_facts))
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
 

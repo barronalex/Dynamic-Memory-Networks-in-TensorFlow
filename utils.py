@@ -199,6 +199,19 @@ def process_input(data_raw, floatX, word2vec, vocab, ivocab, embed_size, split_s
     
     return inputs, questions, answers, input_masks, relevant_labels 
 
+def get_lens(inputs):
+    lens = np.zeros((len(inputs)), dtype=int)
+    for i, t in enumerate(inputs):
+        lens[i] = t.shape[0]
+    return lens
+
+def pad_inputs(inputs, lens, max_len, mask=False):
+    if mask:
+        padded = [np.pad(inp, (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
+        return np.stack(padded, axis=0)
+    padded = [np.pad(np.squeeze(inp, axis=1), (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
+    return np.stack(padded, axis=0)
+
 def get_norm(x):
     x = np.array(x)
     return np.sum(x * x)
@@ -209,4 +222,78 @@ def create_embedding(word2vec, ivocab, embed_size):
         word = ivocab[i]
         embedding[i] = word2vec[word]
     return embedding
-        
+
+def load_babi(config):
+    vocab = {}
+    ivocab = {}
+
+    babi_train_raw, babi_test_raw = get_babi_raw(config.babi_id, config.babi_test_id)
+
+    if config.word2vec_init:
+        assert config.embed_size == 100
+        word2vec = load_glove(config.embed_size)
+    else:
+        word2vec = {}
+
+    print '==> get train inputs'
+    train_input, train_q, train_answer, train_input_mask, train_rel_labels = process_input(babi_train_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size)
+
+    #convert word2vec to matrix representation
+    if config.word2vec_init:
+        assert config.embed_size == 100
+        word_embedding = create_embedding(word2vec, ivocab, config.embed_size)
+    else:
+        word_embedding = np.random.uniform(-config.embedding_init, config.embedding_init, (len(ivocab), config.embed_size))
+
+    train_input_lens = get_lens(train_input)
+    train_q_lens = get_lens(train_q)
+    train_mask_lens = get_lens(train_input_mask)
+
+    max_train_input_len = np.max(train_input_lens)
+    max_train_q_len = np.max(train_q_lens)
+    max_train_mask_len = np.max(train_mask_lens)
+
+    print '==> get test inputs'
+    test_input, test_q, test_answer, test_input_mask, test_rel_labels = process_input(babi_test_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size)
+
+    test_input_lens = get_lens(test_input)
+    test_q_lens = get_lens(test_q)
+    test_mask_lens = get_lens(test_input_mask)
+
+    max_test_input_len = np.max(test_input_lens)
+    max_test_q_len = np.max(test_q_lens)
+    max_test_mask_len = np.max(test_mask_lens)
+
+    max_q_len = np.max([max_train_q_len, max_test_q_len])
+    max_input_len = np.max([max_train_input_len, max_test_input_len])
+    max_mask_len = np.max([max_train_mask_len, max_test_mask_len])
+
+    #pad out arrays to max
+    train_input = pad_inputs(train_input, train_input_lens, max_input_len)
+    train_q = pad_inputs(train_q, train_q_lens, max_q_len)
+    train_mask = pad_inputs(train_input_mask, train_mask_lens, max_mask_len, mask=True)
+    test_input = pad_inputs(test_input, test_input_lens, max_input_len)
+    test_q = pad_inputs(test_q, test_q_lens, max_q_len)
+    test_mask = pad_inputs(test_input_mask, test_mask_lens, max_mask_len, mask=True)
+
+    train_answers = np.stack(train_answer)
+    test_answers = np.stack(test_answer)
+
+    train_rel_labels = np.zeros((len(train_rel_labels), len(train_rel_labels[0])))
+    test_rel_labels = np.zeros((len(test_rel_labels), len(test_rel_labels[0])))
+
+    for i, tt in enumerate(train_rel_labels):
+        train_rel_labels[i] = np.array(tt, dtype=int)
+
+    for i, tt in enumerate(test_rel_labels):
+        test_rel_labels[i] = np.array(tt, dtype=int)
+
+    train = train_q[:config.num_train], train_input[:config.num_train], train_q_lens[:config.num_train], train_input_lens[:config.num_train], train_mask[:config.num_train], train_answers[:config.num_train], train_rel_labels[:config.num_train] 
+
+    valid = train_q[config.num_train:], train_input[config.num_train:], train_q_lens[config.num_train:], train_input_lens[config.num_train:], train_mask[config.num_train:], train_answers[config.num_train:], train_rel_labels[config.num_train:] 
+
+    test = test_q, test_input, test_q_lens, test_input_lens, test_mask, test_answers, test_rel_labels 
+
+    return train, valid, test, word_embedding, max_q_len, max_input_len, max_mask_len, train_rel_labels.shape[1], len(vocab)
+
+    
