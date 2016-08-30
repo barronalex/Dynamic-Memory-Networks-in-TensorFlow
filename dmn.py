@@ -9,7 +9,7 @@ from copy import deepcopy
 
 import tensorflow as tf
 
-import utils
+import babi_input
 from model import DMN
 from xavier_initializer import xavier_weight_init
 
@@ -66,7 +66,7 @@ class DMN(DMN):
 
     def load_data(self, debug=False):
         """Loads starter word-vectors and train/dev/test data."""
-        self.train, self.valid, self.test, self.word_embedding, self.max_q_len, self.max_input_len, self.max_mask_len, self.num_supporting_facts, self.vocab_size = utils.load_babi(self.config)
+        self.train, self.valid, self.test, self.word_embedding, self.max_q_len, self.max_input_len, self.max_mask_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config)
 
     def add_placeholders(self):
         """adds data placeholders for TF graph"""
