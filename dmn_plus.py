@@ -210,13 +210,9 @@ class DMN_PLUS(DMN):
 
         inputs = tf.nn.embedding_lookup(embeddings, self.input_placeholder)
 
-        print inputs.get_shape()
-
         # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
-        print inputs.get_shape()
-        
         inputs = tf.nn.dropout(inputs, self.dropout_placeholder)
 
         inputs = tf.split(1, self.max_input_len, inputs)
@@ -226,9 +222,6 @@ class DMN_PLUS(DMN):
 
         # f<-> = f-> + f<-
         fact_vecs = [tf.reduce_sum(tf.pack(tf.split(1, 2, out)), 0) for out in outputs]
-
-        print fact_vecs[0].get_shape()
-        print len(fact_vecs)
 
         return fact_vecs
 
@@ -373,9 +366,11 @@ class DMN_PLUS(DMN):
                 print '==> generating episode', i
                 episode = self.generate_episode(prev_memory, q_vec, fact_vecs)
 
-                # do a GRU step to get the new memory
-                _, prev_memory = tf.nn.rnn(self.drop_gru, [prev_memory, episode], dtype=np.float32)
-                tf.get_variable_scope().reuse_variables()
+                Wt = tf.get_variable("Wt_"+ str(i), (2*self.config.hidden_size+self.config.embed_size, self.config.hidden_size))
+                bt = tf.get_variable("bt_"+ str(i), (self.config.hidden_size,))
+
+                # use a relu with untied weights for update step
+                prev_memory = tf.nn.relu(tf.matmul(tf.concat(1, [prev_memory, episode, q_vec]), Wt) + bt)
 
             output = prev_memory
 
