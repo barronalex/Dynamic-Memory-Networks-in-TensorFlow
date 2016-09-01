@@ -13,6 +13,8 @@ args = parser.parse_args()
 
 config = Config()
 
+config.train_mode = False
+
 if args.babi_task_id is not None:
     config.babi_id = args.babi_task_id
 

@@ -9,7 +9,7 @@ from copy import deepcopy
 
 import tensorflow as tf
 
-import utils
+import babi_input
 from model import DMN
 from xavier_initializer import xavier_weight_init
 
@@ -18,37 +18,44 @@ ROOT3 = 1.7320508
 
 word2vec_init = False
 
-class Config(object):
-    """Holds model hyperparams and data information.
 
-    The config class is used to store various hyperparameters and dataset
-    information parameters. Model objects are passed a Config() object at
-    instantiation.
-    """
+class Config(object):
+    """Holds model hyperparams and data information."""
 
     # set to zero with strong supervision to only train gates
     beta = 1
 
-    # fix batch size
     batch_size = 100
     embed_size = 80
     hidden_size = 80
+
+    word2vec_init = False
+    embedding_init = 1.7320508 # root 3
+
     max_epochs = 256
     early_stopping = 20
+
     dropout = 0.9
-    drop_grus = True
     lr = 0.001
     l2 = 0.001
+
+    drop_grus = True
+    num_gru_layers = 1
+
     anneal_threshold = 1000
     anneal_by = 1.5
+
     num_hops = 3
-    num_attention_features = 7
+    num_attention_features = 4
     max_grad_val = 10
-    num_gru_layers = 1
     num_train = 9000
+
+    floatX = np.float32
 
     babi_id = "1"
     babi_test_id = ""
+
+    train_mode = True
 
 def _add_gradient_noise(t, stddev=1e-3, name=None):
     """
@@ -62,115 +69,41 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
 
+# from https://github.com/domluna/memn2n
+def position_encoding(sentence_size, embedding_size):
+    """
+    Position Encoding described in section 4.1 in http://arxiv.org/pdf/1503.08895v5.pdf
+    """
+    encoding = np.ones((embedding_size, sentence_size), dtype=np.float32)
+    ls = sentence_size+1
+    le = embedding_size+1
+    for i in range(1, le):
+        for j in range(1, ls):
+            encoding[i-1, j-1] = (i - (le-1)/2) * (j - (ls-1)/2)
+    encoding = 1 + 4 * encoding / embedding_size / sentence_size
+    return np.transpose(encoding)
+
 class DMN_PLUS(DMN):
 
-    def _get_lens(self, inputs):
-        lens = np.zeros((len(inputs)), dtype=int)
-        for i, t in enumerate(inputs):
-            lens[i] = t.shape[0]
-        return lens
-
-    def _pad_inputs(self, inputs, lens, max_len, mask=False):
-        if mask:
-            padded = [np.pad(inp, (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
-            return np.stack(padded, axis=0)
-        padded = [np.pad(np.squeeze(inp, axis=1), (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
-        return np.stack(padded, axis=0)
-
-    # precompute "l" vector for each example for positional encoding
-    def add_positional_encoding(inputs, input_mask):
-
-   
-
     def load_data(self, debug=False):
-
         """Loads starter word-vectors and train/dev/test data."""
-
-        self.vocab = {}
-        self.ivocab = {}
-
-        self.babi_train_raw, self.babi_test_raw = utils.get_babi_raw(self.config.babi_id, self.config.babi_test_id)
-
-        if word2vec_init:
-            assert self.config.embed_size == 100
-            self.word2vec = utils.load_glove(self.config.embed_size)
+        if self.config.train_mode:
+            self.train, self.valid, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         else:
-            self.word2vec = {}
-
-        print '==> get train inputs'
-        train_input, train_q, train_answer, train_input_mask, train_rel_labels = utils.process_input(self.babi_train_raw, floatX, self)
-
-        #convert word2vec to matrix representation
-        if word2vec_init:
-            assert self.config.embed_size == 100
-            self.word_embedding = utils.create_embedding(self.word2vec, self.ivocab, self.config.embed_size)
-        else:
-            self.word_embedding = np.random.uniform(-ROOT3, ROOT3, (len(self.ivocab), self.config.embed_size))
-
-        self.train_input_lens = self._get_lens(train_input)
-        self.train_q_lens = self._get_lens(train_q)
-        self.train_mask_lens = self._get_lens(train_input_mask)
-
-        max_train_input_len = np.max(self.train_input_lens)
-        max_train_q_len = np.max(self.train_q_lens)
-        max_train_mask_len = np.max(self.train_mask_lens)
-
-        print '==> get test inputs'
-        test_input, test_q, test_answer, test_input_mask, test_rel_labels = utils.process_input(self.babi_test_raw, floatX, self)
-
-        self.test_input_lens = self._get_lens(test_input)
-        self.test_q_lens = self._get_lens(test_q)
-        self.test_mask_lens = self._get_lens(test_input_mask)
-
-        max_test_input_len = np.max(self.test_input_lens)
-        max_test_q_len = np.max(self.test_q_lens)
-        max_test_mask_len = np.max(self.test_mask_lens)
-
-        self.max_q_len = np.max([max_train_q_len, max_test_q_len])
-        self.max_input_len = np.max([max_train_input_len, max_test_input_len])
-        self.max_mask_len = np.max([max_train_mask_len, max_test_mask_len])
-
-        # first pad out arrays to max
-        self.train_input = self._pad_inputs(train_input, self.train_input_lens, self.max_input_len)
-        self.train_q = self._pad_inputs(train_q, self.train_q_lens, self.max_q_len)
-        self.train_mask = self._pad_inputs(train_input_mask, self.train_mask_lens, self.max_mask_len, mask=True)
-        self.test_input = self._pad_inputs(test_input, self.test_input_lens, self.max_input_len)
-        self.test_q = self._pad_inputs(test_q, self.test_q_lens, self.max_q_len)
-        self.test_mask = self._pad_inputs(test_input_mask, self.test_mask_lens, self.max_mask_len, mask=True)
-
-        self.train_answers = np.stack(train_answer)
-        self.test_answers = np.stack(test_answer)
-
-        self.train_rel_labels = np.zeros((len(train_rel_labels), len(train_rel_labels[0])))
-        self.test_rel_labels = np.zeros((len(test_rel_labels), len(test_rel_labels[0])))
-
-        for i, tt in enumerate(train_rel_labels):
-            self.train_rel_labels[i] = np.array(tt, dtype=int)
-
-        for i, tt in enumerate(test_rel_labels):
-            self.test_rel_labels[i] = np.array(tt, dtype=int)
-
-        self.train = self.train_q[:self.config.num_train], self.train_input[:self.config.num_train], self.train_q_lens[:self.config.num_train], self.train_input_lens[:self.config.num_train], self.train_mask[:self.config.num_train], self.train_answers[:self.config.num_train], self.train_rel_labels[:self.config.num_train] 
-
-        self.valid = self.train_q[self.config.num_train:], self.train_input[self.config.num_train:], self.train_q_lens[self.config.num_train:], self.train_input_lens[self.config.num_train:], self.train_mask[self.config.num_train:], self.train_answers[self.config.num_train:], self.train_rel_labels[self.config.num_train:] 
-
-        self.test = self.test_q, self.test_input, self.test_q_lens, self.test_input_lens, self.test_mask, self.test_answers, self.test_rel_labels 
-
-        self.vocab_size = len(self.vocab)
+            self.test, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
+        self.encoding = position_encoding(self.max_sen_len, self.config.embed_size)
 
     def add_placeholders(self):
 
         self.question_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_q_len))
-        self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_input_len))
+        self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_input_len, self.max_sen_len))
 
         self.question_len_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size,))
         self.input_len_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size,))
 
-        self.input_mask_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_mask_len))
-
         self.answer_placeholder = tf.placeholder(tf.int64, shape=(self.config.batch_size,))
 
-        self.rel_label_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.train_rel_labels.shape[1]))
+        self.rel_label_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.num_supporting_facts))
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
 
@@ -199,6 +132,13 @@ class DMN_PLUS(DMN):
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
         inputs = tf.nn.embedding_lookup(embeddings, self.input_placeholder)
 
+        print inputs.get_shape()
+
+        #get sentence representation
+        inputs = tf.reduce_sum(inputs * self.encoding, 2)
+
+        print inputs.get_shape()
+
         # do dropout + regularization
         reg = self.config.l2*tf.nn.l2_loss(embeddings)
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
@@ -214,36 +154,6 @@ class DMN_PLUS(DMN):
 
         return questions, inputs
   
-    def add_answer_module(self, rnn_output):
-        """Adds a projection layer.
-
-        The projection layer transforms the hidden representation to a distribution
-        over the vocabulary.
-
-        Hint: Here are the dimensions of the variables you will need to
-              create 
-              
-              U:   (hidden_size, len(vocab))
-              b_2: (len(vocab),)
-
-        Args:
-          rnn_output: a matrix of dimension (batch_size, hidden_size)
-                       a tensor of shape (batch_size, embed_size).
-        Returns:
-          output: a matrix of shape (batch_size, fact_embed_size)
-        """
-        with tf.variable_scope("projection"):
-            # in this baseline implementation, we train 3 different output matricies for
-            # the subject, relation and object components of a fact
-            U = tf.get_variable("U", (self.config.embed_size, self.vocab_size))
-            b_p = tf.get_variable("b_p", (self.vocab_size,))
-
-            reg = self.config.l2*tf.nn.l2_loss(U)
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
-
-            output = tf.matmul(rnn_output, U) + b_p
-
-            return output
 
     def add_loss_op(self, output):
 
@@ -304,26 +214,43 @@ class DMN_PLUS(DMN):
         return train_op
   
 
-    def get_question_representation(self, inputs):
-        outputs, q_vec = tf.nn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.question_len_placeholder)
+    def get_question_representation(self, embeddings):
+
+        questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
+
+        questions = tf.nn.dropout(questions, self.dropout_placeholder)
+
+        questions = tf.split(1, self.max_q_len, questions)
+        questions = [tf.squeeze(q, squeeze_dims=[1]) for q in questions]
+
+        _, q_vec = tf.nn.rnn(self.drop_gru, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
         return q_vec
 
-    def get_input_representation(self, inputs):
+    def get_input_representation(self, embeddings):
 
-        outputs, _ = tf.nn.rnn(self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
+        inputs = tf.nn.embedding_lookup(embeddings, self.input_placeholder)
 
-        # pick out gru outputs at the points specfied by input mask
-        outputs = tf.pack(outputs)
+        print inputs.get_shape()
 
-        outputs = tf.split(1, self.config.batch_size, outputs)
+        #use encoding to get sentence representation
+        inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
-        outputs = [tf.gather(out, tf.gather(self.input_mask_placeholder, i)) for i, out in enumerate(outputs)]
+        print inputs.get_shape()
+        
+        inputs = tf.nn.dropout(inputs, self.dropout_placeholder)
 
-        fact_vecs = tf.concat(1, outputs)
+        inputs = tf.split(1, self.max_input_len, inputs)
+        inputs = [tf.squeeze(i, squeeze_dims=[1]) for i in inputs]
+
+        outputs, _, _ = tf.nn.bidirectional_rnn(self.drop_gru, self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
+
+        #f<-> = f-> + f<-
+        fact_vecs = [tf.reduce_sum(tf.pack(tf.split(1, 2, out)), 0) for out in outputs]
+
+        print fact_vecs[0].get_shape()
+        print len(fact_vecs)
 
         return fact_vecs
-
-
 
     def get_attention(self, q_vec, prev_memory, fact_vec):
         with tf.variable_scope("attention", reuse=True, initializer=xavier_weight_init()):
@@ -334,7 +261,7 @@ class DMN_PLUS(DMN):
             W_2 = tf.get_variable("W_2")
             b_2 = tf.get_variable("b_2")
 
-            features = [fact_vec, prev_memory, q_vec, fact_vec*prev_memory, fact_vec*q_vec, tf.abs(fact_vec - q_vec), tf.abs(fact_vec - prev_memory)]
+            features = [fact_vec*q_vec, fact_vec*prev_memory, tf.abs(fact_vec - q_vec), tf.abs(fact_vec - prev_memory)]
 
             feature_vec = tf.concat(1, features)
 
@@ -350,10 +277,7 @@ class DMN_PLUS(DMN):
     # generates an episode using the inner GRU using the current memory state and 
     def generate_episode(self, memory, q_vec, fact_vecs):
 
-        fact_vecs_split = tf.split(0, self.max_mask_len, fact_vecs)
-        fact_vecs_split = [tf.squeeze(f, squeeze_dims=[0]) for f in fact_vecs_split]
-
-        attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), squeeze_dims=[1]) for fv in fact_vecs_split]
+        attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), squeeze_dims=[1]) for fv in fact_vecs]
 
         attentions = tf.transpose(tf.pack(attentions))
         self.attentions.append(attentions)
@@ -367,8 +291,38 @@ class DMN_PLUS(DMN):
 
         return episode
 
+    def add_answer_module(self, rnn_output):
+        """Adds a projection layer.
 
-    def add_model(self):
+        The projection layer transforms the hidden representation to a distribution
+        over the vocabulary.
+
+        Hint: Here are the dimensions of the variables you will need to
+              create 
+              
+              U:   (hidden_size, len(vocab))
+              b_2: (len(vocab),)
+
+        Args:
+          rnn_output: a matrix of dimension (batch_size, hidden_size)
+                       a tensor of shape (batch_size, embed_size).
+        Returns:
+          output: a matrix of shape (batch_size, fact_embed_size)
+        """
+        with tf.variable_scope("projection"):
+            # in this baseline implementation, we train 3 different output matricies for
+            # the subject, relation and object components of a fact
+            U = tf.get_variable("U", (self.config.embed_size, self.vocab_size))
+            b_p = tf.get_variable("b_p", (self.vocab_size,))
+
+            reg = self.config.l2*tf.nn.l2_loss(U)
+            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
+
+            output = tf.matmul(rnn_output, U) + b_p
+
+            return output
+
+    def inference(self):
         """Creates the RNN LM model.
 
         In the space provided below, you need to implement the equations for the
@@ -382,17 +336,19 @@ class DMN_PLUS(DMN):
           outputs: List of length num_steps, each of whose elements should be
                    a tensor of shape (batch_size, hidden_size)
         """
-        # add embedding split inputs so they can go into rnns
-        questions, inputs = self.add_embedding()
+
+        #set up embedding
+        embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
          
-        with tf.variable_scope("question"):
+        #input fusion module
+        with tf.variable_scope("question", initializer=xavier_weight_init()):
             print '==> get question representation'
-            q_vec = self.get_question_representation(questions)
+            q_vec = self.get_question_representation(embeddings)
          
 
-        with tf.variable_scope("input"):
+        with tf.variable_scope("input", initializer=xavier_weight_init()):
             print '==> get input representation'
-            fact_vecs = self.get_input_representation(inputs)
+            fact_vecs = self.get_input_representation(embeddings)
 
         self.attentions = []
 
@@ -412,6 +368,8 @@ class DMN_PLUS(DMN):
                 tf.get_variable_scope().reuse_variables()
 
             output = prev_memory
+
+        output = self.add_answer_module(output)
 
         return output
 
@@ -437,14 +395,14 @@ class DMN_PLUS(DMN):
                   self.input_placeholder: ip[index],
                   self.question_len_placeholder: ql[index],
                   self.input_len_placeholder: il[index],
-                  self.input_mask_placeholder: im[index],
                   self.answer_placeholder: a[index],
                   self.rel_label_placeholder: r[index],
                   self.dropout_placeholder: dp}
             loss, pred, summary, _ = session.run(
               [self.calculate_loss, self.pred, self.merged, train_op], feed_dict=feed)
 
-            train_writer.add_summary(summary, num_epoch*total_steps + step)
+            if train_writer is not None:
+                train_writer.add_summary(summary, num_epoch*total_steps + step)
 
             answers = a[step*config.batch_size:(step+1)*config.batch_size]
             accuracy += np.sum(pred == answers)/float(len(answers))
@@ -473,8 +431,7 @@ class DMN_PLUS(DMN):
         self.variables_to_save = {}
         self.load_data(debug=False)
         self.add_placeholders()
-        self.rnn_outputs = self.add_model()
-        self.output = self.add_answer_module(self.rnn_outputs)
+        self.output = self.inference()
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)
         self.train_step = self.add_training_op(self.calculate_loss)

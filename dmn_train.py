@@ -4,6 +4,9 @@ import numpy as np
 from dmn import DMN
 from dmn import Config
 
+from dmn_plus import DMN_PLUS
+from dmn_plus import Config as Config_plus
+
 import time
 import argparse
 
@@ -11,10 +14,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--babi_task_id", help="specify babi task 1-20 (default=1)")
 parser.add_argument("-r", "--restore", help="restore previously trained weights (default=false)")
 parser.add_argument("-s", "--strong-supervision", help="use labelled supporting facts (default=false)")
+parser.add_argument("-t", "--dmn_type", help="specify type of dmn (default=original)")
 
 args = parser.parse_args()
 
-config = Config()
+dmn_type = args.dmn_type if args.dmn_type is not None else "original"
+
+if dmn_type == "original":
+    config = Config()
+elif dmn_type == "plus":
+    config = Config_plus()
+else:
+    raise NotImplementedError(dmn_type + ' DMN type is not currently implemented')
 
 if args.babi_task_id is not None:
     config.babi_id = args.babi_task_id
@@ -25,7 +36,10 @@ config.strong_supervision = args.strong_supervision if args.strong_supervision i
 
 # create model
 with tf.variable_scope('RNNLM') as scope:
-    model = DMN(config)
+    if dmn_type == "original":
+        model = DMN(config)
+    elif dmn_type == "plus":
+        model = DMN_PLUS(config)
 
 print '==> initializing variables'
 init = tf.initialize_all_variables()

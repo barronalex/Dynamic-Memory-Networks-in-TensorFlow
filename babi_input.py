@@ -6,6 +6,8 @@ import numpy as np
 # can be sentence or word
 input_mask_mode = "sentence"
 
+
+# adapted from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def init_babi(fname):
     print "==> Loading test from %s" % fname
     tasks = []
@@ -121,8 +123,6 @@ def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="wor
         create_vector(word, word2vec, word_vector_size, silent)
     if not word in vocab: 
         next_index = len(vocab)
-        if next_index == 97:
-            print word
         vocab[word] = next_index
         ivocab[next_index] = word
     
@@ -133,7 +133,6 @@ def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="wor
     elif to_return == "onehot":
         raise Exception("to_return = 'onehot' is not implemented yet")
 
-# adapted from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def process_input(data_raw, floatX, word2vec, vocab, ivocab, embed_size, split_sentences=False):
     questions = []
     inputs = []
@@ -199,22 +198,44 @@ def process_input(data_raw, floatX, word2vec, vocab, ivocab, embed_size, split_s
     
     return inputs, questions, answers, input_masks, relevant_labels 
 
-def get_lens(inputs):
+def get_lens(inputs, split_sentences=False):
     lens = np.zeros((len(inputs)), dtype=int)
     for i, t in enumerate(inputs):
         lens[i] = t.shape[0]
     return lens
 
-def pad_inputs(inputs, lens, max_len, mask=False):
-    if mask:
+def get_sentence_lens(inputs):
+    lens = np.zeros((len(inputs)), dtype=int)
+    sen_lens = []
+    max_sen_lens = []
+    for i, t in enumerate(inputs):
+        sentence_lens = np.zeros((len(t)), dtype=int)
+        #print t
+        for j, s in enumerate(t):
+            sentence_lens[j] = len(s)
+            #print s
+        lens[i] = len(t)
+        sen_lens.append(sentence_lens)
+        max_sen_lens.append(np.max(sentence_lens))
+    return lens, sen_lens, max(max_sen_lens)
+    
+
+def pad_inputs(inputs, lens, max_len, mode="", sen_lens=None, max_sen_len=None):
+    if mode == "mask":
         padded = [np.pad(inp, (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
         return np.stack(padded, axis=0)
+
+    elif mode == "split_sentences":
+        padded = np.zeros((len(inputs), max_len, max_sen_len))
+        for i, inp in enumerate(inputs):
+            padded_sentences = [np.pad(s, (0, max_sen_len - sen_lens[i][j]), 'constant', constant_values=0) for j, s in enumerate(inp)]
+            padded_sentences = np.stack(padded_sentences, axis=0)
+            padded_sentences = np.pad(padded_sentences, ((0, max_len - lens[i]),(0,0)), 'constant', constant_values=0)
+            padded[i] = padded_sentences
+        return padded
+
     padded = [np.pad(np.squeeze(inp, axis=1), (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
     return np.stack(padded, axis=0)
-
-def get_norm(x):
-    x = np.array(x)
-    return np.sum(x * x)
 
 def create_embedding(word2vec, ivocab, embed_size):
     embedding = np.zeros((len(ivocab), embed_size))
@@ -223,7 +244,7 @@ def create_embedding(word2vec, ivocab, embed_size):
         embedding[i] = word2vec[word]
     return embedding
 
-def load_babi(config):
+def load_babi(config, split_sentences=False):
     vocab = {}
     ivocab = {}
 
@@ -236,64 +257,57 @@ def load_babi(config):
         word2vec = {}
 
     print '==> get train inputs'
-    train_input, train_q, train_answer, train_input_mask, train_rel_labels = process_input(babi_train_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size)
+    train_data = process_input(babi_train_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size, split_sentences)
+    print '==> get test inputs'
+    test_data = process_input(babi_test_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size)
 
-    #convert word2vec to matrix representation
     if config.word2vec_init:
         assert config.embed_size == 100
         word_embedding = create_embedding(word2vec, ivocab, config.embed_size)
     else:
         word_embedding = np.random.uniform(-config.embedding_init, config.embedding_init, (len(ivocab), config.embed_size))
 
-    train_input_lens = get_lens(train_input)
-    train_q_lens = get_lens(train_q)
-    train_mask_lens = get_lens(train_input_mask)
+    inputs, questions, answers, input_masks, rel_labels = train_data if config.train_mode else test_data
 
-    max_train_input_len = np.max(train_input_lens)
-    max_train_q_len = np.max(train_q_lens)
-    max_train_mask_len = np.max(train_mask_lens)
+    if split_sentences:
+        input_lens, sen_lens, max_sen_len = get_sentence_lens(inputs)
+        max_mask_len = max_sen_len
+    else:
+        input_lens = get_lens(inputs)
+        mask_lens = get_lens(input_masks)
+        max_mask_len = np.max(mask_lens)
 
-    print '==> get test inputs'
-    test_input, test_q, test_answer, test_input_mask, test_rel_labels = process_input(babi_test_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size)
+    q_lens = get_lens(questions)
 
-    test_input_lens = get_lens(test_input)
-    test_q_lens = get_lens(test_q)
-    test_mask_lens = get_lens(test_input_mask)
-
-    max_test_input_len = np.max(test_input_lens)
-    max_test_q_len = np.max(test_q_lens)
-    max_test_mask_len = np.max(test_mask_lens)
-
-    max_q_len = np.max([max_train_q_len, max_test_q_len])
-    max_input_len = np.max([max_train_input_len, max_test_input_len])
-    max_mask_len = np.max([max_train_mask_len, max_test_mask_len])
+    max_q_len = np.max(q_lens)
+    max_input_len = np.max(input_lens)
 
     #pad out arrays to max
-    train_input = pad_inputs(train_input, train_input_lens, max_input_len)
-    train_q = pad_inputs(train_q, train_q_lens, max_q_len)
-    train_mask = pad_inputs(train_input_mask, train_mask_lens, max_mask_len, mask=True)
-    test_input = pad_inputs(test_input, test_input_lens, max_input_len)
-    test_q = pad_inputs(test_q, test_q_lens, max_q_len)
-    test_mask = pad_inputs(test_input_mask, test_mask_lens, max_mask_len, mask=True)
+    if split_sentences:
+        inputs = pad_inputs(inputs, input_lens, max_input_len, "split_sentences", sen_lens, max_sen_len)
+        input_masks = np.zeros(len(inputs))
+    else:
+        inputs = pad_inputs(inputs, input_lens, max_input_len)
+        input_masks = pad_inputs(input_masks, mask_lens, max_mask_len, "mask")
 
-    train_answers = np.stack(train_answer)
-    test_answers = np.stack(test_answer)
+    questions = pad_inputs(questions, q_lens, max_q_len)
 
-    train_rel_labels = np.zeros((len(train_rel_labels), len(train_rel_labels[0])))
-    test_rel_labels = np.zeros((len(test_rel_labels), len(test_rel_labels[0])))
+    answers = np.stack(answers)
 
-    for i, tt in enumerate(train_rel_labels):
-        train_rel_labels[i] = np.array(tt, dtype=int)
+    rel_labels = np.zeros((len(rel_labels), len(rel_labels[0])))
 
-    for i, tt in enumerate(test_rel_labels):
-        test_rel_labels[i] = np.array(tt, dtype=int)
+    for i, tt in enumerate(rel_labels):
+        rel_labels[i] = np.array(tt, dtype=int)
 
-    train = train_q[:config.num_train], train_input[:config.num_train], train_q_lens[:config.num_train], train_input_lens[:config.num_train], train_mask[:config.num_train], train_answers[:config.num_train], train_rel_labels[:config.num_train] 
+    if config.train_mode:
+        train = questions[:config.num_train], inputs[:config.num_train], q_lens[:config.num_train], input_lens[:config.num_train], input_masks[:config.num_train], answers[:config.num_train], rel_labels[:config.num_train] 
 
-    valid = train_q[config.num_train:], train_input[config.num_train:], train_q_lens[config.num_train:], train_input_lens[config.num_train:], train_mask[config.num_train:], train_answers[config.num_train:], train_rel_labels[config.num_train:] 
+        valid = questions[config.num_train:], inputs[config.num_train:], q_lens[config.num_train:], input_lens[config.num_train:], input_masks[config.num_train:], answers[config.num_train:], rel_labels[config.num_train:] 
+        return train, valid, word_embedding, max_q_len, max_input_len, max_mask_len, rel_labels.shape[1], len(vocab)
 
-    test = test_q, test_input, test_q_lens, test_input_lens, test_mask, test_answers, test_rel_labels 
+    else:
+        test = questions, inputs, q_lens, input_lens, input_masks, answers, rel_labels
+        return test, word_embedding, max_q_len, max_input_len, max_mask_len, rel_labels.shape[1], len(vocab)
 
-    return train, valid, test, word_embedding, max_q_len, max_input_len, max_mask_len, train_rel_labels.shape[1], len(vocab)
 
     
