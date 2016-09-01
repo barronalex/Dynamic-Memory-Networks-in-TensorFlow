@@ -256,6 +256,14 @@ def load_babi(config, split_sentences=False):
     else:
         word2vec = {}
 
+    # set word at index zero to be end of sentence token so padding with zeros is consistent
+    process_word(word = "<eos>", 
+                word2vec = word2vec, 
+                vocab = vocab, 
+                ivocab = ivocab, 
+                word_vector_size = config.embed_size, 
+                to_return = "index")
+
     print '==> get train inputs'
     train_data = process_input(babi_train_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size, split_sentences)
     print '==> get test inputs'

@@ -83,6 +83,8 @@ def position_encoding(sentence_size, embedding_size):
     encoding = 1 + 4 * encoding / embedding_size / sentence_size
     return np.transpose(encoding)
 
+    # TODO fix positional encoding so that it varies according to sentence size
+
 class DMN_PLUS(DMN):
 
     def load_data(self, debug=False):
@@ -125,36 +127,20 @@ class DMN_PLUS(DMN):
             W_2 = tf.get_variable("W_2", (self.config.embed_size, 1))
             b_2 = tf.get_variable("b_2", 1)
 
-    def add_embedding(self):
+        with tf.variable_scope("memory/attention_gru", initializer=xavier_weight_init()):
+            Wr = tf.get_variable("Wr", (self.config.embed_size, self.config.hidden_size))
+            Ur = tf.get_variable("Ur", (self.config.hidden_size, self.config.hidden_size))
+            br = tf.get_variable("br", (1, self.config.hidden_size))
 
-        embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
+            W = tf.get_variable("W", (self.config.embed_size, self.config.hidden_size))
+            U = tf.get_variable("U", (self.config.hidden_size, self.config.hidden_size))
+            bh = tf.get_variable("bh", (1, self.config.hidden_size))
 
-        questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
-        inputs = tf.nn.embedding_lookup(embeddings, self.input_placeholder)
-
-        print inputs.get_shape()
-
-        #get sentence representation
-        inputs = tf.reduce_sum(inputs * self.encoding, 2)
-
-        print inputs.get_shape()
-
-        # do dropout + regularization
-        reg = self.config.l2*tf.nn.l2_loss(embeddings)
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
-
-        questions = tf.split(1, self.max_q_len, questions)
-        inputs = tf.split(1, self.max_input_len, inputs)
-
-        questions = [tf.squeeze(q, squeeze_dims=[1]) for q in questions]
-        inputs = [tf.squeeze(i, squeeze_dims=[1]) for i in inputs]
-
-        questions = [tf.nn.dropout(q, self.dropout_placeholder) for q in questions]
-        inputs = [tf.nn.dropout(inn, self.dropout_placeholder) for inn in inputs]
-
-        return questions, inputs
-  
-
+    def get_predictions(self, output):
+        preds = tf.nn.softmax(output)
+        pred = tf.argmax(preds, 1)
+        return pred
+      
     def add_loss_op(self, output):
 
         """Adds loss ops to the computational graph.
@@ -180,12 +166,6 @@ class DMN_PLUS(DMN):
         tf.scalar_summary('loss', loss)
 
         return loss
-
-    def get_predictions(self, output):
-        preds = tf.nn.softmax(output)
-        pred = tf.argmax(preds, 1)
-        return pred
-      
         
     def add_training_op(self, loss):
         """Sets up the training Ops.
@@ -232,7 +212,7 @@ class DMN_PLUS(DMN):
 
         print inputs.get_shape()
 
-        #use encoding to get sentence representation
+        # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
         print inputs.get_shape()
@@ -244,7 +224,7 @@ class DMN_PLUS(DMN):
 
         outputs, _, _ = tf.nn.bidirectional_rnn(self.drop_gru, self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
 
-        #f<-> = f-> + f<-
+        # f<-> = f-> + f<-
         fact_vecs = [tf.reduce_sum(tf.pack(tf.split(1, 2, out)), 0) for out in outputs]
 
         print fact_vecs[0].get_shape()
@@ -274,8 +254,27 @@ class DMN_PLUS(DMN):
             
         return attention
 
+    def _attention_GRU_step(self, rnn_input, h, g):
+
+        with tf.variable_scope("attention_gru", reuse=True, initializer=xavier_weight_init()):
+
+            Wr = tf.get_variable("Wr")
+            Ur = tf.get_variable("Ur")
+            br = tf.get_variable("br")
+
+            W = tf.get_variable("W")
+            U = tf.get_variable("U")
+            bh = tf.get_variable("bh")
+
+            r = tf.sigmoid(tf.matmul(rnn_input, Wr) + tf.matmul(h, Ur) + br)
+            h_hat = tf.tanh(tf.matmul(rnn_input, W) + r*tf.matmul(h, U) + bh)
+            rnn_output = g*h_hat + (1-g)*h
+
+            return rnn_output
+
     # generates an episode using the inner GRU using the current memory state and 
     def generate_episode(self, memory, q_vec, fact_vecs):
+
 
         attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), squeeze_dims=[1]) for fv in fact_vecs]
 
@@ -283,11 +282,22 @@ class DMN_PLUS(DMN):
         self.attentions.append(attentions)
 
         softs = tf.nn.softmax(attentions)
-        softs = tf.transpose(softs)
+        softs = tf.split(1, self.max_input_len, softs)
+        
+        gru_outputs = []
 
-        weighted_facts = tf.expand_dims(softs, 2)*fact_vecs
+        # set initial state to zero
+        h = tf.zeros((self.config.batch_size, self.config.hidden_size))
 
-        episode = tf.reduce_sum(weighted_facts, reduction_indices=[0])
+        # use attention gru
+        for i, fv in enumerate(fact_vecs):
+            h = self._attention_GRU_step(fv, h, softs[i])
+            gru_outputs.append(h)
+
+        # episode is final gru state
+        episode = h
+
+        # TODO extract gru outputs at proper index according to input_lens
 
         return episode
 
@@ -337,10 +347,10 @@ class DMN_PLUS(DMN):
                    a tensor of shape (batch_size, hidden_size)
         """
 
-        #set up embedding
+        # set up embedding
         embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
          
-        #input fusion module
+        # input fusion module
         with tf.variable_scope("question", initializer=xavier_weight_init()):
             print '==> get question representation'
             q_vec = self.get_question_representation(embeddings)
