@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
 
-from dmn import DMN
-from dmn import Config
+from dmn_original import DMN
+from dmn_original import Config
 
 from dmn_plus import DMN_PLUS
 from dmn_plus import Config as Config_plus
@@ -18,7 +18,7 @@ parser.add_argument("-t", "--dmn_type", help="specify type of dmn (default=origi
 
 args = parser.parse_args()
 
-dmn_type = args.dmn_type if args.dmn_type is not None else "original"
+dmn_type = args.dmn_type if args.dmn_type is not None else "plus"
 
 if dmn_type == "original":
     config = Config()
@@ -30,16 +30,17 @@ else:
 if args.babi_task_id is not None:
     config.babi_id = args.babi_task_id
 
-print 'Training DMN on babi task', config.babi_id
-
 config.strong_supervision = args.strong_supervision if args.strong_supervision is not None else False
 
+print 'Training DMN ' + dmn_type + ' on babi task', config.babi_id
+
 # create model
-with tf.variable_scope('RNNLM') as scope:
+with tf.variable_scope('DMN') as scope:
     if dmn_type == "original":
         model = DMN(config)
     elif dmn_type == "plus":
         model = DMN_PLUS(config)
+
 
 print '==> initializing variables'
 init = tf.initialize_all_variables()

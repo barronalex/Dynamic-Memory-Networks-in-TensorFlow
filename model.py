@@ -59,7 +59,10 @@ class DMN(object):
     """
     raise NotImplementedError("Each Model must re-implement this method.")
 
-  def get_question_representation(self, inputs):
+  def get_question_representation(self, embeddings):
+    raise NotImplementedError("Each Model must re-implement this method.")
+
+  def get_input_representation(self, embeddings):
     raise NotImplementedError("Each Model must re-implement this method.")
   
   def get_attention(self, q_vec, prev_memory):

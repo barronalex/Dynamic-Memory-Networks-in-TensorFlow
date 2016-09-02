@@ -13,24 +13,13 @@ import babi_input
 from model import DMN
 from xavier_initializer import xavier_weight_init
 
-floatX = np.float32
-ROOT3 = 1.7320508
-
-word2vec_init = False
-
-
 class Config(object):
     """Holds model hyperparams and data information."""
 
-    # set to zero with strong supervision to only train gates
-    beta = 1
 
     batch_size = 100
     embed_size = 80
     hidden_size = 80
-
-    word2vec_init = False
-    embedding_init = 1.7320508 # root 3
 
     max_epochs = 256
     early_stopping = 20
@@ -38,6 +27,17 @@ class Config(object):
     dropout = 0.9
     lr = 0.001
     l2 = 0.001
+
+    cap_grads = False
+    max_grad_val = 10
+    noisy_grads = False
+
+    word2vec_init = False
+    embedding_init = 1.7320508 # root 3
+
+    # set to zero with strong supervision to only train gates
+    strong_supervision = False
+    beta = 1
 
     drop_grus = True
     num_gru_layers = 1
@@ -47,7 +47,7 @@ class Config(object):
 
     num_hops = 3
     num_attention_features = 4
-    max_grad_val = 10
+
     num_train = 9000
 
     floatX = np.float32
@@ -72,7 +72,7 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
 # from https://github.com/domluna/memn2n
 def position_encoding(sentence_size, embedding_size):
     """
-    Position Encoding described in section 4.1 in http://arxiv.org/pdf/1503.08895v5.pdf
+    Position Encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)
     """
     encoding = np.ones((embedding_size, sentence_size), dtype=np.float32)
     ls = sentence_size+1
@@ -83,12 +83,12 @@ def position_encoding(sentence_size, embedding_size):
     encoding = 1 + 4 * encoding / embedding_size / sentence_size
     return np.transpose(encoding)
 
-    # TODO fix positional encoding so that it varies according to sentence size
+    # TODO fix positional encoding so that it varies according to sentence lengths
 
 class DMN_PLUS(DMN):
 
     def load_data(self, debug=False):
-        """Loads starter word-vectors and train/dev/test data."""
+        """Loads train/valid/test data and sentence encoding"""
         if self.config.train_mode:
             self.train, self.valid, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         else:
@@ -96,7 +96,7 @@ class DMN_PLUS(DMN):
         self.encoding = position_encoding(self.max_sen_len, self.config.embed_size)
 
     def add_placeholders(self):
-
+        """add data placeholder to graph"""
         self.question_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_q_len))
         self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_input_len, self.max_sen_len))
 
@@ -109,6 +109,8 @@ class DMN_PLUS(DMN):
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
 
+    def add_reused_variables(self):
+        """Adds trainable variables which are later reused""" 
         gru_cell = tf.nn.rnn_cell.GRUCell(self.config.hidden_size)
 
         # apply droput to grus if flag set
@@ -116,9 +118,6 @@ class DMN_PLUS(DMN):
             self.drop_gru = tf.nn.rnn_cell.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
         else:
             self.drop_gru = gru_cell
-
-        multi_gru = tf.nn.rnn_cell.MultiRNNCell([gru_cell] * self.config.num_gru_layers)
-        self.dropm_gru = tf.nn.rnn_cell.DropoutWrapper(multi_gru, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
 
         with tf.variable_scope("memory/attention", initializer=xavier_weight_init()):
             b_1 = tf.get_variable("b_1", (self.config.embed_size,))
@@ -137,25 +136,17 @@ class DMN_PLUS(DMN):
             bh = tf.get_variable("bh", (1, self.config.hidden_size))
 
     def get_predictions(self, output):
+        """Get answer predictions from output"""
         preds = tf.nn.softmax(output)
         pred = tf.argmax(preds, 1)
         return pred
       
     def add_loss_op(self, output):
-
-        """Adds loss ops to the computational graph.
-
-
-        Args:
-          output: A tensor of shape (batch_size, fact_embed_size)
-        Returns:
-          loss: A 0-d tensor (scalar)
-        """
-
+        """Calculate loss"""
+        # optional strong supervision of attention with supporting facts
         gate_loss = 0
         if self.config.strong_supervision:
             for i, att in enumerate(self.attentions):
-                #if i == self.rel_label_placeholder.get_shape()[1]: break
                 labels = tf.gather(tf.transpose(self.rel_label_placeholder), 0)
                 gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(att, labels))
 
@@ -168,34 +159,22 @@ class DMN_PLUS(DMN):
         return loss
         
     def add_training_op(self, loss):
-        """Sets up the training Ops.
-
-        Creates an optimizer and applies the gradients to all trainable variables.
-        The Op returned by this function is what must be passed to the
-        `sess.run()` call to cause the model to train. See 
-
-        https://www.tensorflow.org/versions/r0.7/api_docs/python/train.html#Optimizer
-
-        for more information.
-
-        Hint: Use tf.train.AdamOptimizer for this model.
-              Calling optimizer.minimize() will return a train_op object.
-
-        Args:
-          loss: Loss tensor, from cross_entropy_loss.
-        Returns:
-          train_op: The Op for training.
-        """
+        """Calculate and apply gradients"""
         opt = tf.train.AdamOptimizer(learning_rate=self.config.lr)
         gvs = opt.compute_gradients(loss)
-        capped_gvs = [(tf.clip_by_norm(grad, self.config.max_grad_val), var) for grad, var in gvs]
-        noised_gvs = [(_add_gradient_noise(grad), var) for grad, var in gvs]
+
+        # optionally cap and noise gradients to regularize
+        if self.config.cap_grads:
+            gvs = [(tf.clip_by_norm(grad, self.config.max_grad_val), var) for grad, var in gvs]
+        if self.config.noisy_grads:
+            gvs = [(_add_gradient_noise(grad), var) for grad, var in gvs]
+
         train_op = opt.apply_gradients(gvs)
         return train_op
   
 
     def get_question_representation(self, embeddings):
-
+        """Get question vectors via embedding and GRU"""
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
 
         questions = tf.nn.dropout(questions, self.dropout_placeholder)
@@ -207,7 +186,8 @@ class DMN_PLUS(DMN):
         return q_vec
 
     def get_input_representation(self, embeddings):
-
+        """Get fact (sentence) vectors via embedding, positional encoding and bi-directional GRU"""
+        # get word vectors from embedding
         inputs = tf.nn.embedding_lookup(embeddings, self.input_placeholder)
 
         # use encoding to get sentence representation
@@ -226,6 +206,7 @@ class DMN_PLUS(DMN):
         return fact_vecs
 
     def get_attention(self, q_vec, prev_memory, fact_vec):
+        """Use question vector and previous memory to create scalar attention for current fact"""
         with tf.variable_scope("attention", reuse=True, initializer=xavier_weight_init()):
 
             b_1 = tf.get_variable("b_1")
@@ -248,7 +229,7 @@ class DMN_PLUS(DMN):
         return attention
 
     def _attention_GRU_step(self, rnn_input, h, g):
-
+        """Implement attention GRU as described by https://arxiv.org/abs/1603.01417"""
         with tf.variable_scope("attention_gru", reuse=True, initializer=xavier_weight_init()):
 
             Wr = tf.get_variable("Wr")
@@ -265,9 +246,8 @@ class DMN_PLUS(DMN):
 
             return rnn_output
 
-    # generates an episode using the inner GRU using the current memory state and 
     def generate_episode(self, memory, q_vec, fact_vecs):
-
+        """Generate episode by applying attention to current fact vectors through a modified GRU"""
 
         attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), squeeze_dims=[1]) for fv in fact_vecs]
 
@@ -294,51 +274,21 @@ class DMN_PLUS(DMN):
 
         return episode
 
-    def add_answer_module(self, rnn_output):
-        """Adds a projection layer.
-
-        The projection layer transforms the hidden representation to a distribution
-        over the vocabulary.
-
-        Hint: Here are the dimensions of the variables you will need to
-              create 
-              
-              U:   (hidden_size, len(vocab))
-              b_2: (len(vocab),)
-
-        Args:
-          rnn_output: a matrix of dimension (batch_size, hidden_size)
-                       a tensor of shape (batch_size, embed_size).
-        Returns:
-          output: a matrix of shape (batch_size, fact_embed_size)
-        """
-        with tf.variable_scope("projection"):
-            # in this baseline implementation, we train 3 different output matricies for
-            # the subject, relation and object components of a fact
-            U = tf.get_variable("U", (self.config.embed_size, self.vocab_size))
+    def add_answer_module(self, rnn_output, q_vec):
+        """Linear softmax answer module"""
+        with tf.variable_scope("answer"):
+            U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
             b_p = tf.get_variable("b_p", (self.vocab_size,))
 
             reg = self.config.l2*tf.nn.l2_loss(U)
             tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
 
-            output = tf.matmul(rnn_output, U) + b_p
+            output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
 
             return output
 
     def inference(self):
-        """Creates the RNN LM model.
-
-        In the space provided below, you need to implement the equations for the
-        RNN LM model. Note that you may NOT use built in rnn_cell functions from
-        tensorflow.
-
-        Args:
-          inputs: List of length num_steps, each of whose elements should be
-                  a tensor of shape (batch_size, embed_size).
-        Returns:
-          outputs: List of length num_steps, each of whose elements should be
-                   a tensor of shape (batch_size, hidden_size)
-        """
+        """Performs inference on the DMN model"""
 
         # set up embedding
         embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
@@ -353,8 +303,10 @@ class DMN_PLUS(DMN):
             print '==> get input representation'
             fact_vecs = self.get_input_representation(embeddings)
 
+        # keep track of attentions for possible strong supervision
         self.attentions = []
 
+        # memory module
         with tf.variable_scope("memory", initializer=xavier_weight_init()):
             print '==> build episodic memory'
 
@@ -366,15 +318,17 @@ class DMN_PLUS(DMN):
                 print '==> generating episode', i
                 episode = self.generate_episode(prev_memory, q_vec, fact_vecs)
 
+                # untied weights for memory update
                 Wt = tf.get_variable("Wt_"+ str(i), (2*self.config.hidden_size+self.config.embed_size, self.config.hidden_size))
                 bt = tf.get_variable("bt_"+ str(i), (self.config.hidden_size,))
 
-                # use a relu with untied weights for update step
+                # update memory with Relu
                 prev_memory = tf.nn.relu(tf.matmul(tf.concat(1, [prev_memory, episode, q_vec]), Wt) + bt)
 
             output = prev_memory
 
-        output = self.add_answer_module(output)
+        # pass memory module output through linear answer module
+        output = self.add_answer_module(output, q_vec)
 
         return output
 
@@ -436,6 +390,7 @@ class DMN_PLUS(DMN):
         self.variables_to_save = {}
         self.load_data(debug=False)
         self.add_placeholders()
+        self.add_reused_variables()
         self.output = self.inference()
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)

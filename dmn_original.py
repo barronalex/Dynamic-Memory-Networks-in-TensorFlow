@@ -132,19 +132,6 @@ class DMN(DMN):
 
         return questions, inputs
   
-    def add_answer_module(self, rnn_output, q_vec):
-        """Linear softmax answer module"""
-        with tf.variable_scope("answer"):
-            U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
-            b_p = tf.get_variable("b_p", (self.vocab_size,))
-
-            reg = self.config.l2*tf.nn.l2_loss(U)
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
-
-            output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
-
-            return output
-
     def add_loss_op(self, output):
         """Adds loss with optional gate loss if supporting facts (strong supervision) are used"""
 
@@ -259,8 +246,20 @@ class DMN(DMN):
 
         return episode
 
+    def add_answer_module(self, rnn_output, q_vec):
+        """Linear softmax answer module"""
+        with tf.variable_scope("answer"):
+            U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
+            b_p = tf.get_variable("b_p", (self.vocab_size,))
 
-    def add_model(self):
+            reg = self.config.l2*tf.nn.l2_loss(U)
+            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
+
+            output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
+
+            return output
+
+    def inference(self):
         """Creates the RNN LM model.
 
         In the space provided below, you need to implement the equations for the
@@ -304,6 +303,8 @@ class DMN(DMN):
                 tf.get_variable_scope().reuse_variables()
 
             output = prev_memory
+
+        output = self.add_answer_module(output, q_vec)
 
         return output, q_vec
 
@@ -366,8 +367,7 @@ class DMN(DMN):
         self.variables_to_save = {}
         self.load_data(debug=False)
         self.add_placeholders()
-        self.rnn_outputs, self.q_vec = self.add_model()
-        self.output = self.add_answer_module(self.rnn_outputs, self.q_vec)
+        self.rnn_outputs, self.q_vec = self.inference()
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)
         self.train_step = self.add_training_op(self.calculate_loss)
