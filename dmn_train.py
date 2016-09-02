@@ -1,12 +1,6 @@
 import tensorflow as tf
 import numpy as np
 
-from dmn_original import DMN
-from dmn_original import Config
-
-from dmn_plus import DMN_PLUS
-from dmn_plus import Config as Config_plus
-
 import time
 import argparse
 
@@ -21,9 +15,11 @@ args = parser.parse_args()
 dmn_type = args.dmn_type if args.dmn_type is not None else "plus"
 
 if dmn_type == "original":
+    from dmn_original import Config
     config = Config()
 elif dmn_type == "plus":
-    config = Config_plus()
+    from dmn_plus import Config
+    config = Config()
 else:
     raise NotImplementedError(dmn_type + ' DMN type is not currently implemented')
 
@@ -37,8 +33,10 @@ print 'Training DMN ' + dmn_type + ' on babi task', config.babi_id
 # create model
 with tf.variable_scope('DMN') as scope:
     if dmn_type == "original":
+        from dmn_original import DMN
         model = DMN(config)
     elif dmn_type == "plus":
+        from dmn_plus import DMN_PLUS
         model = DMN_PLUS(config)
 
 

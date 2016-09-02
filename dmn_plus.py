@@ -10,7 +10,6 @@ from copy import deepcopy
 import tensorflow as tf
 
 import babi_input
-from model import DMN
 
 class Config(object):
     """Holds model hyperparams and data information."""
@@ -88,7 +87,7 @@ def _xavier_weight_init():
         return out
     return _xavier_initializer
 
-class DMN_PLUS(DMN):
+class DMN_PLUS(object):
 
     def load_data(self, debug=False):
         """Loads train/valid/test data and sentence encoding"""
