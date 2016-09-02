@@ -58,22 +58,19 @@ class Config(object):
     train_mode = True
 
 def _add_gradient_noise(t, stddev=1e-3, name=None):
-    """
-    Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
+    """Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
     The input Tensor `t` should be a gradient.
     The output will be `t` + gaussian noise.
-    0.001 was said to be a good fixed value for memory networks [2].
-    """
+    0.001 was said to be a good fixed value for memory networks [2]."""
     with tf.op_scope([t, stddev], name, "add_gradient_noise") as name:
         t = tf.convert_to_tensor(t, name="t")
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
 
 # from https://github.com/domluna/memn2n
-def position_encoding(sentence_size, embedding_size):
-    """
-    Position Encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)
-    """
+def _position_encoding(sentence_size, embedding_size):
+    
+    """Position encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)"""
     encoding = np.ones((embedding_size, sentence_size), dtype=np.float32)
     ls = sentence_size+1
     le = embedding_size+1
@@ -85,6 +82,14 @@ def position_encoding(sentence_size, embedding_size):
 
     # TODO fix positional encoding so that it varies according to sentence lengths
 
+def xavier_weight_init():
+    """Xavier initializer for all variables except embeddings as desribed in [1]"""
+    def _xavier_initializer(shape, **kwargs):
+        eps = np.sqrt(6) / np.sqrt(np.sum(shape))
+        out = tf.random_uniform(shape, minval=-eps, maxval=eps)
+        return out
+    return _xavier_initializer
+
 class DMN_PLUS(DMN):
 
     def load_data(self, debug=False):
@@ -93,7 +98,7 @@ class DMN_PLUS(DMN):
             self.train, self.valid, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         else:
             self.test, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
-        self.encoding = position_encoding(self.max_sen_len, self.config.embed_size)
+        self.encoding = _position_encoding(self.max_sen_len, self.config.embed_size)
 
     def add_placeholders(self):
         """add data placeholder to graph"""
