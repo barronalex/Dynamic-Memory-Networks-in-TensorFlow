@@ -11,11 +11,9 @@ import tensorflow as tf
 
 import babi_input
 from model import DMN
-from xavier_initializer import xavier_weight_init
 
 class Config(object):
     """Holds model hyperparams and data information."""
-
 
     batch_size = 100
     embed_size = 80
@@ -82,7 +80,7 @@ def _position_encoding(sentence_size, embedding_size):
 
     # TODO fix positional encoding so that it varies according to sentence lengths
 
-def xavier_weight_init():
+def _xavier_weight_init():
     """Xavier initializer for all variables except embeddings as desribed in [1]"""
     def _xavier_initializer(shape, **kwargs):
         eps = np.sqrt(6) / np.sqrt(np.sum(shape))
@@ -124,14 +122,14 @@ class DMN_PLUS(DMN):
         else:
             self.drop_gru = gru_cell
 
-        with tf.variable_scope("memory/attention", initializer=xavier_weight_init()):
+        with tf.variable_scope("memory/attention", initializer=_xavier_weight_init()):
             b_1 = tf.get_variable("b_1", (self.config.embed_size,))
             W_1 = tf.get_variable("W_1", (self.config.embed_size*self.config.num_attention_features, self.config.embed_size))
 
             W_2 = tf.get_variable("W_2", (self.config.embed_size, 1))
             b_2 = tf.get_variable("b_2", 1)
 
-        with tf.variable_scope("memory/attention_gru", initializer=xavier_weight_init()):
+        with tf.variable_scope("memory/attention_gru", initializer=_xavier_weight_init()):
             Wr = tf.get_variable("Wr", (self.config.embed_size, self.config.hidden_size))
             Ur = tf.get_variable("Ur", (self.config.hidden_size, self.config.hidden_size))
             br = tf.get_variable("br", (1, self.config.hidden_size))
@@ -212,7 +210,7 @@ class DMN_PLUS(DMN):
 
     def get_attention(self, q_vec, prev_memory, fact_vec):
         """Use question vector and previous memory to create scalar attention for current fact"""
-        with tf.variable_scope("attention", reuse=True, initializer=xavier_weight_init()):
+        with tf.variable_scope("attention", reuse=True, initializer=_xavier_weight_init()):
 
             b_1 = tf.get_variable("b_1")
             W_1 = tf.get_variable("W_1")
@@ -235,7 +233,7 @@ class DMN_PLUS(DMN):
 
     def _attention_GRU_step(self, rnn_input, h, g):
         """Implement attention GRU as described by https://arxiv.org/abs/1603.01417"""
-        with tf.variable_scope("attention_gru", reuse=True, initializer=xavier_weight_init()):
+        with tf.variable_scope("attention_gru", reuse=True, initializer=_xavier_weight_init()):
 
             Wr = tf.get_variable("Wr")
             Ur = tf.get_variable("Ur")
@@ -299,12 +297,12 @@ class DMN_PLUS(DMN):
         embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
          
         # input fusion module
-        with tf.variable_scope("question", initializer=xavier_weight_init()):
+        with tf.variable_scope("question", initializer=_xavier_weight_init()):
             print '==> get question representation'
             q_vec = self.get_question_representation(embeddings)
          
 
-        with tf.variable_scope("input", initializer=xavier_weight_init()):
+        with tf.variable_scope("input", initializer=_xavier_weight_init()):
             print '==> get input representation'
             fact_vecs = self.get_input_representation(embeddings)
 
@@ -312,7 +310,7 @@ class DMN_PLUS(DMN):
         self.attentions = []
 
         # memory module
-        with tf.variable_scope("memory", initializer=xavier_weight_init()):
+        with tf.variable_scope("memory", initializer=_xavier_weight_init()):
             print '==> build episodic memory'
 
             # generate n_hops episodes
