@@ -282,7 +282,6 @@ def load_babi(config, split_sentences=False):
     if split_sentences:
         input_lens, sen_lens, max_sen_len = get_sentence_lens(inputs)
         max_mask_len = max_sen_len
-        print 'splitting'
     else:
         input_lens = get_lens(inputs)
         mask_lens = get_lens(input_masks)

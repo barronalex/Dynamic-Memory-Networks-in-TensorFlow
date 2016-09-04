@@ -36,8 +36,7 @@ class Config(object):
     strong_supervision = False
     beta = 1
 
-    drop_grus = True
-    num_gru_layers = 1
+    drop_grus = False
 
     anneal_threshold = 1000
     anneal_by = 1.5
@@ -118,25 +117,25 @@ class DMN_PLUS(object):
 
         # apply droput to grus if flag set
         if self.config.drop_grus:
-            self.drop_gru = tf.nn.rnn_cell.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
+            self.gru_cell = tf.nn.rnn_cell.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
         else:
-            self.drop_gru = gru_cell
+            self.gru_cell = gru_cell
 
         with tf.variable_scope("memory/attention", initializer=_xavier_weight_init()):
-            b_1 = tf.get_variable("b_1", (self.config.embed_size,))
+            b_1 = tf.get_variable("bias_1", (self.config.embed_size,))
             W_1 = tf.get_variable("W_1", (self.config.embed_size*self.config.num_attention_features, self.config.embed_size))
 
             W_2 = tf.get_variable("W_2", (self.config.embed_size, 1))
-            b_2 = tf.get_variable("b_2", 1)
+            b_2 = tf.get_variable("bias_2", 1)
 
         with tf.variable_scope("memory/attention_gru", initializer=_xavier_weight_init()):
             Wr = tf.get_variable("Wr", (self.config.embed_size, self.config.hidden_size))
             Ur = tf.get_variable("Ur", (self.config.hidden_size, self.config.hidden_size))
-            br = tf.get_variable("br", (1, self.config.hidden_size))
+            br = tf.get_variable("bias_r", (1, self.config.hidden_size))
 
             W = tf.get_variable("W", (self.config.embed_size, self.config.hidden_size))
             U = tf.get_variable("U", (self.config.hidden_size, self.config.hidden_size))
-            bh = tf.get_variable("bh", (1, self.config.hidden_size))
+            bh = tf.get_variable("bias_h", (1, self.config.hidden_size))
 
     def get_predictions(self, output):
         """Get answer predictions from output"""
@@ -155,7 +154,10 @@ class DMN_PLUS(object):
 
         loss = self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder)) + gate_loss
 
-        loss += tf.reduce_sum(tf.pack(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
+        # add l2 regularization for all variables except biases
+        for v in tf.trainable_variables():
+            if not 'bias' in v.name.lower():
+                loss += self.config.l2*tf.nn.l2_loss(v)
 
         tf.scalar_summary('loss', loss)
 
@@ -180,12 +182,10 @@ class DMN_PLUS(object):
         """Get question vectors via embedding and GRU"""
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
 
-        questions = tf.nn.dropout(questions, self.dropout_placeholder)
-
         questions = tf.split(1, self.max_q_len, questions)
         questions = [tf.squeeze(q, squeeze_dims=[1]) for q in questions]
 
-        _, q_vec = tf.nn.rnn(self.drop_gru, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
+        _, q_vec = tf.nn.rnn(self.gru_cell, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
         return q_vec
 
     def get_input_representation(self, embeddings):
@@ -196,15 +196,16 @@ class DMN_PLUS(object):
         # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
-        inputs = tf.nn.dropout(inputs, self.dropout_placeholder)
-
         inputs = tf.split(1, self.max_input_len, inputs)
         inputs = [tf.squeeze(i, squeeze_dims=[1]) for i in inputs]
 
-        outputs, _, _ = tf.nn.bidirectional_rnn(self.drop_gru, self.drop_gru, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
+        outputs, _, _ = tf.nn.bidirectional_rnn(self.gru_cell, self.gru_cell, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
 
         # f<-> = f-> + f<-
         fact_vecs = [tf.reduce_sum(tf.pack(tf.split(1, 2, out)), 0) for out in outputs]
+
+        # apply dropout
+        fact_vecs = [tf.nn.dropout(fv, self.dropout_placeholder) for fv in fact_vecs]
 
         return fact_vecs
 
@@ -212,19 +213,15 @@ class DMN_PLUS(object):
         """Use question vector and previous memory to create scalar attention for current fact"""
         with tf.variable_scope("attention", reuse=True, initializer=_xavier_weight_init()):
 
-            b_1 = tf.get_variable("b_1")
+            b_1 = tf.get_variable("bias_1")
             W_1 = tf.get_variable("W_1")
 
             W_2 = tf.get_variable("W_2")
-            b_2 = tf.get_variable("b_2")
+            b_2 = tf.get_variable("bias_2")
 
             features = [fact_vec*q_vec, fact_vec*prev_memory, tf.abs(fact_vec - q_vec), tf.abs(fact_vec - prev_memory)]
 
             feature_vec = tf.concat(1, features)
-
-            reg = self.config.l2*(tf.nn.l2_loss(W_1) + tf.nn.l2_loss(W_2))
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
-
 
             attention = tf.matmul(tf.tanh(tf.matmul(feature_vec, W_1) + b_1), W_2) + b_2
             # normalize attention?
@@ -237,11 +234,11 @@ class DMN_PLUS(object):
 
             Wr = tf.get_variable("Wr")
             Ur = tf.get_variable("Ur")
-            br = tf.get_variable("br")
+            br = tf.get_variable("bias_r")
 
             W = tf.get_variable("W")
             U = tf.get_variable("U")
-            bh = tf.get_variable("bh")
+            bh = tf.get_variable("bias_h")
 
             r = tf.sigmoid(tf.matmul(rnn_input, Wr) + tf.matmul(h, Ur) + br)
             h_hat = tf.tanh(tf.matmul(rnn_input, W) + r*tf.matmul(h, U) + bh)
@@ -286,12 +283,11 @@ class DMN_PLUS(object):
         """Linear softmax answer module"""
         with tf.variable_scope("answer"):
             U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
-            b_p = tf.get_variable("b_p", (self.vocab_size,))
-
-            reg = self.config.l2*tf.nn.l2_loss(U)
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
+            b_p = tf.get_variable("bias_p", (self.vocab_size,))
 
             output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
+
+            output = tf.nn.dropout(output, self.dropout_placeholder)
 
             return output
 
@@ -327,8 +323,8 @@ class DMN_PLUS(object):
                 episode = self.generate_episode(prev_memory, q_vec, fact_vecs)
 
                 # untied weights for memory update
-                Wt = tf.get_variable("Wt_"+ str(i), (2*self.config.hidden_size+self.config.embed_size, self.config.hidden_size))
-                bt = tf.get_variable("bt_"+ str(i), (self.config.hidden_size,))
+                Wt = tf.get_variable("W_t"+ str(i), (2*self.config.hidden_size+self.config.embed_size, self.config.hidden_size))
+                bt = tf.get_variable("bias_t"+ str(i), (self.config.hidden_size,))
 
                 # update memory with Relu
                 prev_memory = tf.nn.relu(tf.matmul(tf.concat(1, [prev_memory, episode, q_vec]), Wt) + bt)

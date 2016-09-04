@@ -55,6 +55,9 @@ with tf.Session() as session:
     best_val_epoch = 0
     prev_epoch_loss = float('inf')
 
+    for v in tf.trainable_variables():
+        print v.name
+
     if args.restore:
         print '==> restoring weights'
         saver.restore(session, 'weights/mem' + str(model.config.babi_id) + 'beta=' + str(model.config.beta) + '.weights')
