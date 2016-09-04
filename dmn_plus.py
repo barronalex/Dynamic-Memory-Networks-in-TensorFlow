@@ -45,6 +45,7 @@ class Config(object):
     num_hops = 3
     num_attention_features = 4
 
+    max_allowed_inputs = 130
     num_train = 9000
 
     floatX = np.float32
@@ -272,7 +273,12 @@ class DMN_PLUS(object):
         # episode is final gru state
         episode = h
 
-        # TODO extract gru outputs at proper index according to input_lens
+        # extract gru outputs at proper index according to input_lens
+        gru_outputs = tf.pack(gru_outputs)
+        gru_outputs = tf.split(1, self.config.batch_size, gru_outputs)
+        gru_outputs = [tf.gather(tf.squeeze(out), tf.gather(self.input_len_placeholder - 1, i)) for i, out in enumerate(gru_outputs)]
+
+        episode = tf.pack(gru_outputs)
 
         return episode
 

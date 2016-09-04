@@ -6,9 +6,9 @@ import numpy as np
 # can be sentence or word
 input_mask_mode = "sentence"
 
-
 # adapted from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def init_babi(fname):
+    
     print "==> Loading test from %s" % fname
     tasks = []
     task = None
@@ -210,10 +210,8 @@ def get_sentence_lens(inputs):
     max_sen_lens = []
     for i, t in enumerate(inputs):
         sentence_lens = np.zeros((len(t)), dtype=int)
-        #print t
         for j, s in enumerate(t):
             sentence_lens[j] = len(s)
-            #print s
         lens[i] = len(t)
         sen_lens.append(sentence_lens)
         max_sen_lens.append(np.max(sentence_lens))
@@ -229,6 +227,10 @@ def pad_inputs(inputs, lens, max_len, mode="", sen_lens=None, max_sen_len=None):
         padded = np.zeros((len(inputs), max_len, max_sen_len))
         for i, inp in enumerate(inputs):
             padded_sentences = [np.pad(s, (0, max_sen_len - sen_lens[i][j]), 'constant', constant_values=0) for j, s in enumerate(inp)]
+            # trim array according to max allowed inputs
+            if len(padded_sentences) > max_len:
+                padded_sentences = padded_sentences[(len(padded_sentences)-max_len):]
+                lens[i] = max_len
             padded_sentences = np.stack(padded_sentences, axis=0)
             padded_sentences = np.pad(padded_sentences, ((0, max_len - lens[i]),(0,0)), 'constant', constant_values=0)
             padded[i] = padded_sentences
@@ -267,7 +269,7 @@ def load_babi(config, split_sentences=False):
     print '==> get train inputs'
     train_data = process_input(babi_train_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size, split_sentences)
     print '==> get test inputs'
-    test_data = process_input(babi_test_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size)
+    test_data = process_input(babi_test_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size, split_sentences)
 
     if config.word2vec_init:
         assert config.embed_size == 100
@@ -280,6 +282,7 @@ def load_babi(config, split_sentences=False):
     if split_sentences:
         input_lens, sen_lens, max_sen_len = get_sentence_lens(inputs)
         max_mask_len = max_sen_len
+        print 'splitting'
     else:
         input_lens = get_lens(inputs)
         mask_lens = get_lens(input_masks)
@@ -288,7 +291,7 @@ def load_babi(config, split_sentences=False):
     q_lens = get_lens(questions)
 
     max_q_len = np.max(q_lens)
-    max_input_len = np.max(input_lens)
+    max_input_len = min(np.max(input_lens), config.max_allowed_inputs)
 
     #pad out arrays to max
     if split_sentences:
