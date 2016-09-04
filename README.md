@@ -1,5 +1,5 @@
 # Dynamic-Memory-Networks-in-TensorFlow
-Dynamic Memory Network implementation in TensorFlow
+DMN+ implementation in TensorFlow
 
 Structure and parameters from https://arxiv.org/abs/1603.01417 "Dynamic Memory Networks for Visual and Textual Question Answering".
 
