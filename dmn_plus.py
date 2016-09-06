@@ -66,7 +66,6 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
 
 # from https://github.com/domluna/memn2n
 def _position_encoding(sentence_size, embedding_size):
-    
     """Position encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)"""
     encoding = np.ones((embedding_size, sentence_size), dtype=np.float32)
     ls = sentence_size+1
@@ -86,6 +85,19 @@ def _xavier_weight_init():
         out = tf.random_uniform(shape, minval=-eps, maxval=eps)
         return out
     return _xavier_initializer
+
+# from https://danijar.com/variable-sequence-lengths-in-tensorflow/
+# used only for custom attention GRU as TF handles this with the sequence length param for normal RNNs
+def _last_relevant(output, length):
+    """Finds the output at the end of each input"""
+    batch_size = int(output.get_shape()[0])
+    max_length = int(output.get_shape()[1])
+    out_size = int(output.get_shape()[2])
+    index = tf.range(0, batch_size) * max_length + (length - 1)
+    flat = tf.reshape(output, [-1, out_size])
+    relevant = tf.gather(flat, index)
+    return relevant
+    
 
 class DMN_PLUS(object):
 
@@ -186,6 +198,7 @@ class DMN_PLUS(object):
         questions = [tf.squeeze(q, squeeze_dims=[1]) for q in questions]
 
         _, q_vec = tf.nn.rnn(self.gru_cell, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
+        
         return q_vec
 
     def get_input_representation(self, embeddings):
@@ -213,8 +226,8 @@ class DMN_PLUS(object):
         """Use question vector and previous memory to create scalar attention for current fact"""
         with tf.variable_scope("attention", reuse=True, initializer=_xavier_weight_init()):
 
-            b_1 = tf.get_variable("bias_1")
             W_1 = tf.get_variable("W_1")
+            b_1 = tf.get_variable("bias_1")
 
             W_2 = tf.get_variable("W_2")
             b_2 = tf.get_variable("bias_2")
@@ -267,15 +280,10 @@ class DMN_PLUS(object):
             h = self._attention_GRU_step(fv, h, softs[i])
             gru_outputs.append(h)
 
-        # episode is final gru state
-        episode = h
-
         # extract gru outputs at proper index according to input_lens
         gru_outputs = tf.pack(gru_outputs)
-        gru_outputs = tf.split(1, self.config.batch_size, gru_outputs)
-        gru_outputs = [tf.gather(tf.squeeze(out), tf.gather(self.input_len_placeholder - 1, i)) for i, out in enumerate(gru_outputs)]
-
-        episode = tf.pack(gru_outputs)
+        gru_outputs = tf.transpose(gru_outputs, perm=[1,0,2])
+        episode = _last_relevant(gru_outputs, self.input_len_placeholder)
 
         return episode
 

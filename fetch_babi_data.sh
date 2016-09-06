@@ -8,3 +8,5 @@ tar zxvf $fname
 mkdir -p data
 mv tasks_1-20_v1-2/* data/
 rm -r tasks_1-20_v1-2
+
+mkdir weights
