@@ -31,9 +31,6 @@ config.babi_id = args.babi_task_id if args.babi_task_id is not None else 1
 config.l2 = args.l2_loss if args.l2_loss is not None else 0.001
 config.strong_supervision = args.strong_supervision if args.strong_supervision is not None else False
 
-print float(args.l2_loss)
-
-
 print 'Training DMN ' + dmn_type + ' on babi task', config.babi_id
 
 # create model
