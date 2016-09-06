@@ -7,8 +7,9 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--babi_task_id", help="specify babi task 1-20 (default=1)")
 parser.add_argument("-r", "--restore", help="restore previously trained weights (default=false)")
-parser.add_argument("-s", "--strong-supervision", help="use labelled supporting facts (default=false)")
+parser.add_argument("-s", "--strong_supervision", help="use labelled supporting facts (default=false)")
 parser.add_argument("-t", "--dmn_type", help="specify type of dmn (default=original)")
+parser.add_argument("-l", "--l2_loss", type=float, help="specify l2 loss constant")
 
 args = parser.parse_args()
 
@@ -26,7 +27,12 @@ else:
 if args.babi_task_id is not None:
     config.babi_id = args.babi_task_id
 
+config.babi_id = args.babi_task_id if args.babi_task_id is not None else 1
+config.l2 = args.l2_loss if args.l2_loss is not None else 0.001
 config.strong_supervision = args.strong_supervision if args.strong_supervision is not None else False
+
+print float(args.l2_loss)
+
 
 print 'Training DMN ' + dmn_type + ' on babi task', config.babi_id
 
@@ -54,9 +60,6 @@ with tf.Session() as session:
     best_val_loss = float('inf')
     best_val_epoch = 0
     prev_epoch_loss = float('inf')
-
-    for v in tf.trainable_variables():
-        print v.name
 
     if args.restore:
         print '==> restoring weights'
