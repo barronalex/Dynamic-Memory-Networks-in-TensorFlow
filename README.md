@@ -12,5 +12,5 @@ Adapted from Stanford's cs224d assignment 2 starter code (http://cs224d.stanford
 | `dmn_train.py` | trains the model on a specified (-b) babi task|
 | `dmn_test.py` | tests the model on a specified (-b) babi task |
 | `babi_input.py` | prepares babi data for input into DMN |
-| `fetch_babi_data.sh` | shell script to fetch bAbI tasks (adapted from [MemN2N](https://github.com/npow/MemN2N)) |
+| `fetch_babi_data.sh` | shell script to fetch bAbI tasks (from [DMNs in Theano](https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano)) |
 
