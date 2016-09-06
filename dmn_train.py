@@ -67,12 +67,14 @@ with tf.Session() as session:
         print 'Epoch {}'.format(epoch)
         start = time.time()
         ###
-        train_loss = model.run_epoch(
+        train_loss, train_accuracy = model.run_epoch(
           session, model.train, epoch, train_writer,
           train_op=model.train_step, train=True)
-        valid_loss = model.run_epoch(session, model.valid)
+        valid_loss, valid_accuracy = model.run_epoch(session, model.valid)
         print 'Training loss: {}'.format(train_loss)
         print 'Validation loss: {}'.format(valid_loss)
+        print 'Training accuracy: {}'.format(train_accuracy)
+        print 'Vaildation accuracy: {}'.format(valid_accuracy)
 
         if valid_loss < best_val_loss:
             best_val_loss = valid_loss

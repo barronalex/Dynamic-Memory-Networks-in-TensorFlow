@@ -381,11 +381,7 @@ class DMN_PLUS(object):
         if verbose:
             sys.stdout.write('\r')
 
-        print ''
-        if self.config.beta > 0:
-            print "accuracy:", accuracy/float(total_steps)
-        
-        return np.mean(total_loss)
+        return np.mean(total_loss), accuracy/float(total_steps)
 
 
     def __init__(self, config):
