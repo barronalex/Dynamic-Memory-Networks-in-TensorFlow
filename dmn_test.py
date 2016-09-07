@@ -46,7 +46,7 @@ with tf.Session() as session:
     session.run(init)
 
     print '==> restoring weights'
-    saver.restore(session, 'weights/mem' + str(model.config.babi_id) + 'beta=' + str(model.config.beta) + '.weights')
+    saver.restore(session, 'weights/test' + str(model.config.babi_id) + '.weights')
 
     print '==> running DMN'
     test_loss, test_accuracy = model.run_epoch(session, model.test)

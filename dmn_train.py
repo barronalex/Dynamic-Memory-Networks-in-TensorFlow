@@ -3,6 +3,7 @@ import numpy as np
 
 import time
 import argparse
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--babi_task_id", help="specify babi task 1-20 (default=1)")
@@ -50,7 +51,10 @@ saver = tf.train.Saver()
 
 with tf.Session() as session:
 
-    train_writer = tf.train.SummaryWriter('summaries/train', session.graph)
+    sum_dir = 'summaries/train/' + time.strftime("%Y-%m-%d %H %M")
+    if not os.path.exists(sum_dir):
+        os.makedirs(sum_dir)
+    train_writer = tf.train.SummaryWriter(sum_dir, session.graph)
 
     session.run(init)
 
@@ -60,7 +64,7 @@ with tf.Session() as session:
 
     if args.restore:
         print '==> restoring weights'
-        saver.restore(session, 'weights/mem' + str(model.config.babi_id) + 'beta=' + str(model.config.beta) + '.weights')
+        saver.restore(session, 'weights/task' + str(model.config.babi_id) + '.weights')
 
     print '==> starting training'
     for epoch in xrange(config.max_epochs):
@@ -79,7 +83,7 @@ with tf.Session() as session:
         if valid_loss < best_val_loss:
             best_val_loss = valid_loss
             best_val_epoch = epoch
-            saver.save(session, 'weights/mem' + str(model.config.babi_id) + 'beta=' + str(model.config.beta) + '.weights')
+            saver.save(session, 'weights/task' + str(model.config.babi_id) + '.weights')
 
         # anneal
         if train_loss>prev_epoch_loss*model.config.anneal_threshold:

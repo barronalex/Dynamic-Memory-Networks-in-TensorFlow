@@ -4,4 +4,5 @@
 /summaries
 *.swp
 *.pyc
+*.zip
 dmn_original.py

@@ -55,10 +55,10 @@ class Config(object):
     train_mode = True
 
 def _add_gradient_noise(t, stddev=1e-3, name=None):
-    """Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
+    """Adds gradient noise as described in http://arxiv.org/abs/1511.06807
     The input Tensor `t` should be a gradient.
     The output will be `t` + gaussian noise.
-    0.001 was said to be a good fixed value for memory networks [2]."""
+    0.001 was said to be a good fixed value for memory networks."""
     with tf.op_scope([t, stddev], name, "add_gradient_noise") as name:
         t = tf.convert_to_tensor(t, name="t")
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
@@ -237,7 +237,6 @@ class DMN_PLUS(object):
             feature_vec = tf.concat(1, features)
 
             attention = tf.matmul(tf.tanh(tf.matmul(feature_vec, W_1) + b_1), W_2) + b_2
-            # normalize attention?
             
         return attention
 
@@ -265,6 +264,7 @@ class DMN_PLUS(object):
         attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), squeeze_dims=[1]) for fv in fact_vecs]
 
         attentions = tf.transpose(tf.pack(attentions))
+
         self.attentions.append(attentions)
 
         softs = tf.nn.softmax(attentions)

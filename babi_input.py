@@ -221,7 +221,7 @@ def get_sentence_lens(inputs):
 def pad_inputs(inputs, lens, max_len, mode="", sen_lens=None, max_sen_len=None):
     if mode == "mask":
         padded = [np.pad(inp, (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
-        return np.stack(padded, axis=0)
+        return np.vstack(padded)
 
     elif mode == "split_sentences":
         padded = np.zeros((len(inputs), max_len, max_sen_len))
@@ -231,13 +231,13 @@ def pad_inputs(inputs, lens, max_len, mode="", sen_lens=None, max_sen_len=None):
             if len(padded_sentences) > max_len:
                 padded_sentences = padded_sentences[(len(padded_sentences)-max_len):]
                 lens[i] = max_len
-            padded_sentences = np.stack(padded_sentences, axis=0)
+            padded_sentences = np.vstack(padded_sentences)
             padded_sentences = np.pad(padded_sentences, ((0, max_len - lens[i]),(0,0)), 'constant', constant_values=0)
             padded[i] = padded_sentences
         return padded
 
     padded = [np.pad(np.squeeze(inp, axis=1), (0, max_len - lens[i]), 'constant', constant_values=0) for i, inp in enumerate(inputs)]
-    return np.stack(padded, axis=0)
+    return np.vstack(padded)
 
 def create_embedding(word2vec, ivocab, embed_size):
     embedding = np.zeros((len(ivocab), embed_size))
