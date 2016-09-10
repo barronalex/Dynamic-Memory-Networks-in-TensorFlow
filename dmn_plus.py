@@ -348,7 +348,7 @@ class DMN_PLUS(object):
     def run_epoch(self, session, data, num_epoch=0, train_writer=None, train_op=None, verbose=2, train=False):
         config = self.config
         dp = config.dropout
-        if not train_op:
+        if train_op is None:
             train_op = tf.no_op()
             dp = 1
         total_steps = len(data[0]) / config.batch_size
