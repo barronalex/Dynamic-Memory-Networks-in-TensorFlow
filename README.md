@@ -41,30 +41,20 @@ Each task was trained on separately with l2 = 0.001. As the paper suggests, 10 t
 
 I haven't yet had the time to fully optimize the l2 parameter which is not specified by the paper. My hypothesis is that fully optimizing l2 regularization would close the final significant performance gap between the TensorFlow DMN+ and original DMN+ on task 3. 
 
-Below are the full results for each bAbI task:
+Below are the full results for each bAbI task (tasks where both implementations achieved 0 test error are omitted):
 
 | Task ID | TensorFlow DMN+| Xiong et al DMN+ |
 | :---: | :---: | :---: |
-| 1 | 0.0 | 0.0 |
 | 2 | 0.9 | 0.3 |
 | 3 | 20.2 | 1.1 |
-| 4 | 0.0 | 0.0 |
 | 5 | 0.5 | 0.5 |
-| 6 | 0.0 | 0.0 |
 | 7 | 2.8 | 2.4 |
 | 8 | 0.5 | 0.0 |
 | 9 | 0.1 | 0.0 |
-| 10 | 0.0 | 0.0 |
-| 11 | 0.0 | 0.0 |
-| 12 | 0.0 | 0.0 |
-| 13 | 0.0 | 0.0 |
 | 14 | 0.0 | 0.2 |
-| 15 | 0.0 | 0.0 |
 | 16 | 46.2 | 45.3 |
 | 17 | 5.0 | 4.2 |
 | 18 | 2.2 | 2.1 |
-| 19 | 0.0 | 0.0 |
-| 20 | 0.0 | 0.0 |
 
 
 
