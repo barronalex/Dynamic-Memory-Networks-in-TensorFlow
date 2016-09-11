@@ -35,13 +35,9 @@ The l2 regularization constant can be set with -l2-loss (-l). All other paramete
 ## Benchmarks
 The TensorFlow DMN+ reaches close to state of the art performance on the 10k dataset with weak supervision (no supporting facts).
 
-<---!| . | TensorFlow DMN+| Xiong et al DMN+ |
-| :---: | :---: | :---: |
-| Mean error | xx | 2.8 |
-| Failed tasks (>5% error) | x | 1 |--->
 Each task was trained on separately with l2 = 0.001. As the paper suggests, 10 training runs were used for tasks 2, 3, 17 and 18 (configurable with --num-runs), where the weights which produce the lowest validation loss in any run are used for testing.
 
-The pre-trained weights which achieve these benchmarks are available in 'pretrained'.
+<!--The pre-trained weights which achieve these benchmarks are available in 'pretrained'.-->
 
 I haven't yet had the time to fully optimize the l2 parameter which is not specified by the paper. My hypothesis is that fully optimizing l2 regularization would close the final significant performance gap between the TensorFlow DMN+ and original DMN+ on task 3. 
 
