@@ -290,12 +290,14 @@ class DMN_PLUS(object):
     def add_answer_module(self, rnn_output, q_vec):
         """Linear softmax answer module"""
         with tf.variable_scope("answer"):
+
+            rnn_output = tf.nn.dropout(rnn_output, self.dropout_placeholder)
+
             U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
             b_p = tf.get_variable("bias_p", (self.vocab_size,))
 
             output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
 
-            output = tf.nn.dropout(output, self.dropout_placeholder)
 
             return output
 

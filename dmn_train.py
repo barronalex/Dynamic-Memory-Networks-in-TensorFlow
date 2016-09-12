@@ -67,6 +67,7 @@ for run in range(num_runs):
         best_val_epoch = 0
         prev_epoch_loss = float('inf')
         best_val_loss = float('inf')
+        best_val_accuracy = 0.0
 
         if args.restore:
             print '==> restoring weights'
@@ -76,7 +77,7 @@ for run in range(num_runs):
         for epoch in xrange(config.max_epochs):
             print 'Epoch {}'.format(epoch)
             start = time.time()
-            ###
+
             train_loss, train_accuracy = model.run_epoch(
               session, model.train, epoch, train_writer,
               train_op=model.train_step, train=True)
