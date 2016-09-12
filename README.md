@@ -46,7 +46,7 @@ Below are the full results for each bAbI task (tasks where both implementations 
 | Task ID | TensorFlow DMN+| Xiong et al DMN+ |
 | :---: | :---: | :---: |
 | 2 | 0.9 | 0.3 |
-| 3 | 20.2 | 1.1 |
+| 3 | 18.4 | 1.1 |
 | 5 | 0.5 | 0.5 |
 | 7 | 2.8 | 2.4 |
 | 8 | 0.5 | 0.0 |
