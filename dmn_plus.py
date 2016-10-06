@@ -2,9 +2,6 @@ import sys
 import time
 
 import numpy as np
-import pandas as pd
-import cPickle
-import tables
 from copy import deepcopy
 
 import tensorflow as tf
