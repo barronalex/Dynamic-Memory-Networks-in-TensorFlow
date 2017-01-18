@@ -2,9 +2,6 @@ import sys
 import time
 
 import numpy as np
-import pandas as pd
-import cPickle
-import tables
 from copy import deepcopy
 
 import tensorflow as tf
@@ -171,7 +168,7 @@ class DMN_PLUS(object):
             if not 'bias' in v.name.lower():
                 loss += self.config.l2*tf.nn.l2_loss(v)
 
-        tf.scalar_summary('loss', loss)
+        tf.summary.scalar('loss', loss)
 
         return loss
         
@@ -395,7 +392,6 @@ class DMN_PLUS(object):
 
 
     def __init__(self, config):
-
         self.config = config
         self.variables_to_save = {}
         self.load_data(debug=False)
@@ -405,5 +401,5 @@ class DMN_PLUS(object):
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)
         self.train_step = self.add_training_op(self.calculate_loss)
-        self.merged = tf.merge_all_summaries()
+        self.merged = tf.summary.merge_all()
 

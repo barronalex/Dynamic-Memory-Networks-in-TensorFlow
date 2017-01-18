@@ -39,7 +39,7 @@ with tf.variable_scope('DMN') as scope:
         model = DMN_PLUS(config)
 
 print '==> initializing variables'
-init = tf.initialize_all_variables()
+init = tf.global_variables_initializer()
 saver = tf.train.Saver()
 
 with tf.Session() as session:

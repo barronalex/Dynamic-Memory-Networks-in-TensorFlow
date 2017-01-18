@@ -52,7 +52,7 @@ for run in range(num_runs):
     print 'Starting run', run
 
     print '==> initializing variables'
-    init = tf.initialize_all_variables()
+    init = tf.global_variables_initializer()
     saver = tf.train.Saver()
 
     with tf.Session() as session:
@@ -60,7 +60,7 @@ for run in range(num_runs):
         sum_dir = 'summaries/train/' + time.strftime("%Y-%m-%d %H %M")
         if not os.path.exists(sum_dir):
             os.makedirs(sum_dir)
-        train_writer = tf.train.SummaryWriter(sum_dir, session.graph)
+        train_writer = tf.summary.FileWriter(sum_dir, session.graph)
 
         session.run(init)
 
