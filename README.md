@@ -20,7 +20,7 @@ Install [TensorFlow](https://www.tensorflow.org/versions/r0.10/get_started/index
 
 Run the included shell script to fetch the data
 
-	./fetch_babi_data.sh
+	bash fetch_babi_data.sh
 
 Use 'dmn_train.py' to train the DMN+ model contained in 'dmn_plus.py'
 

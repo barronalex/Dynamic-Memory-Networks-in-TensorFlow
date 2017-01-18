@@ -10,7 +10,7 @@ parser.add_argument("-b", "--babi_task_id", help="specify babi task 1-20 (defaul
 parser.add_argument("-r", "--restore", help="restore previously trained weights (default=false)")
 parser.add_argument("-s", "--strong_supervision", help="use labelled supporting facts (default=false)")
 parser.add_argument("-t", "--dmn_type", help="specify type of dmn (default=original)")
-parser.add_argument("-l", "--l2_loss", type=float, help="specify l2 loss constant")
+parser.add_argument("-l", "--l2_loss", type=float, default=0.001, help="specify l2 loss constant")
 parser.add_argument("-n", "--num_runs", type=int, help="specify the number of model runs")
 
 args = parser.parse_args()
