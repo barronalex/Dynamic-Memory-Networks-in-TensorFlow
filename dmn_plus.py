@@ -122,11 +122,11 @@ class DMN_PLUS(object):
 
     def add_reused_variables(self):
         """Adds trainable variables which are later reused""" 
-        gru_cell = tf.nn.rnn_cell.GRUCell(self.config.hidden_size)
+        gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
 
         # apply droput to grus if flag set
         if self.config.drop_grus:
-            self.gru_cell = tf.nn.rnn_cell.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
+            self.gru_cell = tf.contrib.rnn.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
         else:
             self.gru_cell = gru_cell
 
@@ -159,9 +159,9 @@ class DMN_PLUS(object):
         if self.config.strong_supervision:
             for i, att in enumerate(self.attentions):
                 labels = tf.gather(tf.transpose(self.rel_label_placeholder), 0)
-                gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(att, labels))
+                gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=att, labels=labels))
 
-        loss = self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.answer_placeholder)) + gate_loss
+        loss = self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=output, labels=self.answer_placeholder)) + gate_loss
 
         # add l2 regularization for all variables except biases
         for v in tf.trainable_variables():
@@ -191,10 +191,10 @@ class DMN_PLUS(object):
         """Get question vectors via embedding and GRU"""
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
 
-        questions = tf.split(1, self.max_q_len, questions)
+        questions = tf.split(questions, self.max_q_len, axis=1)
         questions = [tf.squeeze(q, squeeze_dims=[1]) for q in questions]
 
-        _, q_vec = tf.nn.rnn(self.gru_cell, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
+        _, q_vec = tf.contrib.rnn.static_rnn(self.gru_cell, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
         
         return q_vec
 
@@ -206,13 +206,13 @@ class DMN_PLUS(object):
         # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
-        inputs = tf.split(1, self.max_input_len, inputs)
+        inputs = tf.split(inputs, self.max_input_len, axis=1)
         inputs = [tf.squeeze(i, squeeze_dims=[1]) for i in inputs]
 
-        outputs, _, _ = tf.nn.bidirectional_rnn(self.gru_cell, self.gru_cell, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
+        outputs, _, _ = tf.contrib.rnn.static_bidirectional_rnn(self.gru_cell, self.gru_cell, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
 
         # f<-> = f-> + f<-
-        fact_vecs = [tf.reduce_sum(tf.pack(tf.split(1, 2, out)), 0) for out in outputs]
+        fact_vecs = [tf.reduce_sum(tf.stack(tf.split(out, 2, axis=1)), axis=0) for out in outputs]
 
         # apply dropout
         fact_vecs = [tf.nn.dropout(fv, self.dropout_placeholder) for fv in fact_vecs]
@@ -231,7 +231,7 @@ class DMN_PLUS(object):
 
             features = [fact_vec*q_vec, fact_vec*prev_memory, tf.abs(fact_vec - q_vec), tf.abs(fact_vec - prev_memory)]
 
-            feature_vec = tf.concat(1, features)
+            feature_vec = tf.concat(features, 1)
 
             attention = tf.matmul(tf.tanh(tf.matmul(feature_vec, W_1) + b_1), W_2) + b_2
             
@@ -258,14 +258,14 @@ class DMN_PLUS(object):
     def generate_episode(self, memory, q_vec, fact_vecs):
         """Generate episode by applying attention to current fact vectors through a modified GRU"""
 
-        attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), squeeze_dims=[1]) for fv in fact_vecs]
+        attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), axis=1) for fv in fact_vecs]
 
-        attentions = tf.transpose(tf.pack(attentions))
+        attentions = tf.transpose(tf.stack(attentions))
 
         self.attentions.append(attentions)
 
         softs = tf.nn.softmax(attentions)
-        softs = tf.split(1, self.max_input_len, softs)
+        softs = tf.split(softs, self.max_input_len, axis=1)
         
         gru_outputs = []
 
@@ -278,7 +278,7 @@ class DMN_PLUS(object):
             gru_outputs.append(h)
 
         # extract gru outputs at proper index according to input_lens
-        gru_outputs = tf.pack(gru_outputs)
+        gru_outputs = tf.stack(gru_outputs)
         gru_outputs = tf.transpose(gru_outputs, perm=[1,0,2])
         episode = _last_relevant(gru_outputs, self.input_len_placeholder)
 
@@ -293,7 +293,7 @@ class DMN_PLUS(object):
             U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
             b_p = tf.get_variable("bias_p", (self.vocab_size,))
 
-            output = tf.matmul(tf.concat(1, [rnn_output, q_vec]), U) + b_p
+            output = tf.matmul(tf.concat([rnn_output, q_vec], 1), U) + b_p
 
 
             return output
@@ -334,7 +334,7 @@ class DMN_PLUS(object):
                 bt = tf.get_variable("bias_t"+ str(i), (self.config.hidden_size,))
 
                 # update memory with Relu
-                prev_memory = tf.nn.relu(tf.matmul(tf.concat(1, [prev_memory, episode, q_vec]), Wt) + bt)
+                prev_memory = tf.nn.relu(tf.matmul(tf.concat([prev_memory, episode, q_vec], 1), Wt) + bt)
 
             output = prev_memory
 
