@@ -27,7 +27,7 @@ class Config(object):
     noisy_grads = False
 
     word2vec_init = False
-    embedding_init = 1.7320508 # root 3
+    embedding_init = np.sqrt(3) 
 
     # set to zero with strong supervision to only train gates
     strong_supervision = False
@@ -191,8 +191,7 @@ class DMN_PLUS(object):
         """Get question vectors via embedding and GRU"""
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
 
-        questions = tf.split(questions, self.max_q_len, axis=1)
-        questions = [tf.squeeze(q, squeeze_dims=[1]) for q in questions]
+        questions = tf.unstack(questions, self.max_q_len, axis=1)
 
         _, q_vec = tf.contrib.rnn.static_rnn(self.gru_cell, questions, dtype=np.float32, sequence_length=self.question_len_placeholder)
         
@@ -206,8 +205,7 @@ class DMN_PLUS(object):
         # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
-        inputs = tf.split(inputs, self.max_input_len, axis=1)
-        inputs = [tf.squeeze(i, squeeze_dims=[1]) for i in inputs]
+        inputs = tf.unstack(inputs, self.max_input_len, axis=1)
 
         outputs, _, _ = tf.contrib.rnn.static_bidirectional_rnn(self.gru_cell, self.gru_cell, inputs, dtype=np.float32, sequence_length=self.input_len_placeholder)
 
