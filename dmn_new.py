@@ -7,8 +7,6 @@ from copy import deepcopy
 import tensorflow as tf
 from attention_gru_cell import AttentionGRUCell
 
-from tensorflow.contrib.cudnn_rnn.python.ops import cudnn_rnn_ops
-
 import babi_input
 
 class Config(object):
@@ -78,6 +76,27 @@ def _position_encoding(sentence_size, embedding_size):
 
     # TODO fix positional encoding so that it varies according to sentence lengths
 
+def _xavier_weight_init():
+    """Xavier initializer for all variables except embeddings as desribed in [1]"""
+    def _xavier_initializer(shape, **kwargs):
+        eps = np.sqrt(6) / np.sqrt(np.sum(shape))
+        out = tf.random_uniform(shape, minval=-eps, maxval=eps)
+        return out
+    return _xavier_initializer
+
+# from https://danijar.com/variable-sequence-lengths-in-tensorflow/
+# used only for custom attention GRU as TF handles this with the sequence length param for normal RNNs
+def _last_relevant(output, length):
+    """Finds the output at the end of each input"""
+    batch_size = int(output.get_shape()[0])
+    max_length = int(output.get_shape()[1])
+    out_size = int(output.get_shape()[2])
+    index = tf.range(0, batch_size) * max_length + (length - 1)
+    flat = tf.reshape(output, [-1, out_size])
+    relevant = tf.gather(flat, index)
+    return relevant
+    
+
 class DMN_PLUS(object):
 
     def load_data(self, debug=False):
@@ -102,15 +121,18 @@ class DMN_PLUS(object):
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
 
-        self.gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
+    def add_reused_variables(self):
+        """Adds trainable variables which are later reused""" 
+        gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
 
         # apply droput to grus if flag set
         if self.config.drop_grus:
-            self.gru_cell = tf.contrib.rnn.DropoutWrapper(self.gru_cell,
-                    input_keep_prob=self.dropout_placeholder,
-                    output_keep_prob=self.dropout_placeholder)
+            self.gru_cell = tf.contrib.rnn.DropoutWrapper(gru_cell, input_keep_prob=self.dropout_placeholder, output_keep_prob=self.dropout_placeholder)
+        else:
+            self.gru_cell = gru_cell
 
     def get_predictions(self, output):
+        """Get answer predictions from output"""
         preds = tf.nn.softmax(output)
         pred = tf.argmax(preds, 1)
         return pred
@@ -129,7 +151,6 @@ class DMN_PLUS(object):
         # add l2 regularization for all variables except biases
         for v in tf.trainable_variables():
             if not 'bias' in v.name.lower():
-                print v.name
                 loss += self.config.l2*tf.nn.l2_loss(v)
 
         tf.summary.scalar('loss', loss)
@@ -155,12 +176,12 @@ class DMN_PLUS(object):
         """Get question vectors via embedding and GRU"""
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
 
+        #gru_cell = tf.contrib.cudnn_rnn.CudnnGRU(1, self.config.hidden_size, questions.get_shape()[2])
         _, q_vec = tf.nn.dynamic_rnn(self.gru_cell,
                 questions,
                 dtype=np.float32,
-                sequence_length=self.question_len_placeholder
-        )
-
+                sequence_length=self.question_len_placeholder)
+        
         return q_vec
 
     def get_input_representation(self, embeddings):
@@ -175,8 +196,7 @@ class DMN_PLUS(object):
                 self.gru_cell,
                 inputs,
                 dtype=np.float32,
-                sequence_length=self.input_len_placeholder
-        )
+                sequence_length=self.input_len_placeholder)
 
         # f<-> = f-> + f<-
         fact_vecs = tf.reduce_sum(tf.stack(outputs), axis=0)
@@ -186,65 +206,87 @@ class DMN_PLUS(object):
 
         return fact_vecs
 
-    def get_attention(self, q_vec, prev_memory, fact_vec, reuse):
+    def get_attention(self, q_vec, prev_memory, fact_vec, hop_index):
         """Use question vector and previous memory to create scalar attention for current fact"""
-        with tf.variable_scope("attention", reuse=True):
+        with tf.variable_scope("attention", initializer=_xavier_weight_init()):
 
-            features = [fact_vec*q_vec,
-                        fact_vec*prev_memory,
-                        tf.abs(fact_vec - q_vec),
-                        tf.abs(fact_vec - prev_memory)]
+            #print fact_vec.get_shape()
+            #print q_vec.get_shape()
+            #print prev_memory.get_shape()
+            #print (fact_vec*prev_memory).get_shape()
+            #print (tf.abs(fact_vec - q_vec)).get_shape()
+            fact_vecs = tf.unstack(fact_vec, axis=1)
 
-            feature_vec = tf.concat(features, 1)
+            #fact_vec = tf.transpose(fact_vec, perm=[0,2,1])
+            print fact_vec[0].get_shape()
+            #q_vec = tf.expand_dims(q_vec, axis=-1)
+            #prev_memory = tf.expand_dims(prev_memory, axis=-1)
 
-            attention = tf.layers.dense(feature_vec,
-                    self.config.embed_size,
-                    activation=tf.nn.tanh,
-                    reuse=reuse)
+            features = [[fact_vec*q_vec, fact_vec*prev_memory, tf.abs(fact_vec - q_vec), tf.abs(fact_vec - prev_memory)] for fact_vec in fact_vecs]
 
-            attention = tf.layers.dense(attention,
-                    1,
-                    activation=None,
-                    reuse=reuse)
+
+            feature_vec = [tf.concat(f, 1) for f in features]
+            feature_vec = tf.stack(feature_vec, 1)
+
+            #feature_vec = tf.transpose(feature_vec, perm=[0,2,1])
+
+            print 'feature vec'
+            print feature_vec.get_shape()
+
+            reuse = True if hop_index > 0 else False
+            attention = tf.layers.dense(feature_vec, self.config.embed_size,
+                     activation=tf.nn.tanh,
+                     kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                     kernel_regularizer=tf.contrib.layers.l2_regularizer(self.config.l2),
+                     reuse=reuse)
+            attention = tf.layers.dense(attention, 1,
+                     activation=None,
+                     kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                     kernel_regularizer=tf.contrib.layers.l2_regularizer(self.config.l2),
+                     reuse=reuse)
+
+            print 'attention'
+            print attention.get_shape()
             
         return attention
 
     def generate_episode(self, memory, q_vec, fact_vecs, hop_index):
         """Generate episode by applying attention to current fact vectors through a modified GRU"""
 
-        attentions = [tf.squeeze(
-            self.get_attention(q_vec, memory, fv, bool(hop_index) or bool(i)), axis=1)
-            for i, fv in enumerate(tf.unstack(fact_vecs, axis=1))]
+        #attentions = [tf.squeeze(self.get_attention(q_vec, memory, fv), axis=1) for fv in fact_vecs]
+        attentions = self.get_attention(q_vec, memory, fact_vecs, hop_index)
 
-        attentions = tf.transpose(tf.stack(attentions))
         self.attentions.append(attentions)
-        attentions = tf.nn.softmax(attentions)
-        attentions = tf.expand_dims(attentions, axis=-1)
 
-        reuse = True if hop_index > 0 else False
+        softs = tf.nn.softmax(attentions)
         
-        # concatenate fact vectors and attentions for input into attGRU
-        gru_inputs = tf.concat([fact_vecs, attentions], 2)
+        reuse = True if hop_index > 0 else False
 
+        gru_inputs = tf.concat([fact_vecs, softs], 2)
         with tf.variable_scope('attention_gru', reuse=reuse):
             _, episode = tf.nn.dynamic_rnn(AttentionGRUCell(self.config.hidden_size),
                     gru_inputs,
                     dtype=np.float32,
                     sequence_length=self.input_len_placeholder
-            )
+                    )
+
+        #print episode.get_shape()
 
         return episode
 
     def add_answer_module(self, rnn_output, q_vec):
         """Linear softmax answer module"""
+        with tf.variable_scope("answer"):
 
-        rnn_output = tf.nn.dropout(rnn_output, self.dropout_placeholder)
+            rnn_output = tf.nn.dropout(rnn_output, self.dropout_placeholder)
 
-        output = tf.layers.dense(tf.concat([rnn_output, q_vec], 1),
-                self.vocab_size,
-                activation=None)
+            U = tf.get_variable("U", (2*self.config.embed_size, self.vocab_size))
+            b_p = tf.get_variable("bias_p", (self.vocab_size,))
 
-        return output
+            output = tf.matmul(tf.concat([rnn_output, q_vec], 1), U) + b_p
+
+
+            return output
 
     def inference(self):
         """Performs inference on the DMN model"""
@@ -253,12 +295,12 @@ class DMN_PLUS(object):
         embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
          
         # input fusion module
-        with tf.variable_scope("question", initializer=tf.contrib.layers.xavier_initializer()):
+        with tf.variable_scope("question", initializer=_xavier_weight_init()):
             print '==> get question representation'
             q_vec = self.get_question_representation(embeddings)
          
 
-        with tf.variable_scope("input", initializer=tf.contrib.layers.xavier_initializer()):
+        with tf.variable_scope("input", initializer=_xavier_weight_init()):
             print '==> get input representation'
             fact_vecs = self.get_input_representation(embeddings)
 
@@ -266,7 +308,7 @@ class DMN_PLUS(object):
         self.attentions = []
 
         # memory module
-        with tf.variable_scope("memory", initializer=tf.contrib.layers.xavier_initializer()):
+        with tf.variable_scope("memory", initializer=_xavier_weight_init()):
             print '==> build episodic memory'
 
             # generate n_hops episodes
@@ -278,16 +320,18 @@ class DMN_PLUS(object):
                 episode = self.generate_episode(prev_memory, q_vec, fact_vecs, i)
 
                 # untied weights for memory update
-                with tf.variable_scope("hop_%d" % i):
-                    prev_memory = tf.layers.dense(tf.concat([prev_memory, episode, q_vec], 1),
-                            self.config.hidden_size,
-                            activation=tf.nn.relu)
+                Wt = tf.get_variable("W_t"+ str(i), (2*self.config.hidden_size+self.config.embed_size, self.config.hidden_size))
+                bt = tf.get_variable("bias_t"+ str(i), (self.config.hidden_size,))
+                #preds = tf.layers.dense(tf.concat([prev_memory, episode, q_vec], 1),
+                    
+
+                # update memory with Relu
+                prev_memory = tf.nn.relu(tf.matmul(tf.concat([prev_memory, episode, q_vec], 1), Wt) + bt)
 
             output = prev_memory
 
         # pass memory module output through linear answer module
-        with tf.variable_scope("answer", initializer=tf.contrib.layers.xavier_initializer()):
-            output = self.add_answer_module(output, q_vec)
+        output = self.add_answer_module(output, q_vec)
 
         return output
 
@@ -344,6 +388,7 @@ class DMN_PLUS(object):
         self.variables_to_save = {}
         self.load_data(debug=False)
         self.add_placeholders()
+        self.add_reused_variables()
         self.output = self.inference()
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)
