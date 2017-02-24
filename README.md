@@ -13,6 +13,7 @@ Adapted from Stanford's [cs224d](http://cs224d.stanford.edu/) assignment 2 start
 | `dmn_train.py` | trains the model on a specified (-b) babi task|
 | `dmn_test.py` | tests the model on a specified (-b) babi task |
 | `babi_input.py` | prepares bAbI data for input into DMN |
+| `attention_gru_cell.py` | contains a custom Attention GRU cell implementation |
 | `fetch_babi_data.sh` | shell script to fetch bAbI tasks (from [DMNs in Theano](https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano)) |
 
 ## Usage

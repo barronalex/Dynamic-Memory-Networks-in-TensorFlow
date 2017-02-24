@@ -76,8 +76,6 @@ def _position_encoding(sentence_size, embedding_size):
     encoding = 1 + 4 * encoding / embedding_size / sentence_size
     return np.transpose(encoding)
 
-    # TODO fix positional encoding so that it varies according to sentence lengths
-
 class DMN_PLUS(object):
 
     def load_data(self, debug=False):
@@ -129,7 +127,6 @@ class DMN_PLUS(object):
         # add l2 regularization for all variables except biases
         for v in tf.trainable_variables():
             if not 'bias' in v.name.lower():
-                print v.name
                 loss += self.config.l2*tf.nn.l2_loss(v)
 
         tf.summary.scalar('loss', loss)
