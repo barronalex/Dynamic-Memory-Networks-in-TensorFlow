@@ -1,3 +1,6 @@
+from __future__ import print_function
+from __future__ import division
+
 import sys
 import time
 
@@ -36,8 +39,7 @@ class Config(object):
     strong_supervision = False
     beta = 1
 
-    drop_grus = False
-
+    # NOTE not currently used hence non-sensical anneal_threshold
     anneal_threshold = 1000
     anneal_by = 1.5
 
@@ -100,14 +102,6 @@ class DMN_PLUS(object):
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
 
-        self.gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
-
-        # apply droput to grus if flag set
-        if self.config.drop_grus:
-            self.gru_cell = tf.contrib.rnn.DropoutWrapper(self.gru_cell,
-                    input_keep_prob=self.dropout_placeholder,
-                    output_keep_prob=self.dropout_placeholder)
-
     def get_predictions(self, output):
         preds = tf.nn.softmax(output)
         pred = tf.argmax(preds, 1)
@@ -152,7 +146,8 @@ class DMN_PLUS(object):
         """Get question vectors via embedding and GRU"""
         questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
 
-        _, q_vec = tf.nn.dynamic_rnn(self.gru_cell,
+        gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
+        _, q_vec = tf.nn.dynamic_rnn(gru_cell,
                 questions,
                 dtype=np.float32,
                 sequence_length=self.question_len_placeholder
@@ -168,8 +163,11 @@ class DMN_PLUS(object):
         # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
 
-        outputs, _ = tf.nn.bidirectional_dynamic_rnn(self.gru_cell,
-                self.gru_cell,
+        forward_gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
+        backward_gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
+        outputs, _ = tf.nn.bidirectional_dynamic_rnn(
+                forward_gru_cell,
+                backward_gru_cell,
                 inputs,
                 dtype=np.float32,
                 sequence_length=self.input_len_placeholder
@@ -185,7 +183,7 @@ class DMN_PLUS(object):
 
     def get_attention(self, q_vec, prev_memory, fact_vec, reuse):
         """Use question vector and previous memory to create scalar attention for current fact"""
-        with tf.variable_scope("attention", reuse=True):
+        with tf.variable_scope("attention", reuse=reuse):
 
             features = [fact_vec*q_vec,
                         fact_vec*prev_memory,
@@ -251,12 +249,12 @@ class DMN_PLUS(object):
          
         # input fusion module
         with tf.variable_scope("question", initializer=tf.contrib.layers.xavier_initializer()):
-            print '==> get question representation'
+            print('==> get question representation')
             q_vec = self.get_question_representation(embeddings)
          
 
         with tf.variable_scope("input", initializer=tf.contrib.layers.xavier_initializer()):
-            print '==> get input representation'
+            print('==> get input representation')
             fact_vecs = self.get_input_representation(embeddings)
 
         # keep track of attentions for possible strong supervision
@@ -264,14 +262,14 @@ class DMN_PLUS(object):
 
         # memory module
         with tf.variable_scope("memory", initializer=tf.contrib.layers.xavier_initializer()):
-            print '==> build episodic memory'
+            print('==> build episodic memory')
 
             # generate n_hops episodes
             prev_memory = q_vec
 
             for i in range(self.config.num_hops):
                 # get a new episode
-                print '==> generating episode', i
+                print('==> generating episode', i)
                 episode = self.generate_episode(prev_memory, q_vec, fact_vecs, i)
 
                 # untied weights for memory update
@@ -295,7 +293,7 @@ class DMN_PLUS(object):
         if train_op is None:
             train_op = tf.no_op()
             dp = 1
-        total_steps = len(data[0]) / config.batch_size
+        total_steps = len(data[0]) // config.batch_size
         total_loss = []
         accuracy = 0
         

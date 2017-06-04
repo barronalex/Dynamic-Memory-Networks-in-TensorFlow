@@ -1,3 +1,6 @@
+from __future__ import division
+from __future__ import print_function
+
 import sys
 
 import os as os
@@ -9,7 +12,7 @@ input_mask_mode = "sentence"
 # adapted from https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano/
 def init_babi(fname):
     
-    print "==> Loading test from %s" % fname
+    print("==> Loading test from %s" % fname)
     tasks = []
     task = None
     for i, line in enumerate(open(fname)):
@@ -99,13 +102,13 @@ def get_babi_raw(id, test_id):
 def load_glove(dim):
     word2vec = {}
     
-    print "==> loading glove"
+    print("==> loading glove")
     with open(("./data/glove/glove.6B/glove.6B." + str(dim) + "d.txt")) as f:
         for line in f:    
             l = line.split()
             word2vec[l[0]] = map(float, l[1:])
             
-    print "==> glove is loaded"
+    print("==> glove is loaded")
     
     return word2vec
 
@@ -115,7 +118,7 @@ def create_vector(word, word2vec, word_vector_size, silent=True):
     vector = np.random.uniform(0.0,1.0,(word_vector_size,))
     word2vec[word] = vector
     if (not silent):
-        print "utils.py::create_vector => %s is missing" % word
+        print("utils.py::create_vector => %s is missing" % word)
     return vector
 
 def process_word(word, word2vec, vocab, ivocab, word_vector_size, to_return="word2vec", silent=True):
@@ -266,9 +269,9 @@ def load_babi(config, split_sentences=False):
                 word_vector_size = config.embed_size, 
                 to_return = "index")
 
-    print '==> get train inputs'
+    print('==> get train inputs')
     train_data = process_input(babi_train_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size, split_sentences)
-    print '==> get test inputs'
+    print('==> get test inputs')
     test_data = process_input(babi_test_raw, config.floatX, word2vec, vocab, ivocab, config.embed_size, split_sentences)
 
     if config.word2vec_init:
