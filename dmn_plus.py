@@ -192,15 +192,15 @@ class DMN_PLUS(object):
 
             feature_vec = tf.concat(features, 1)
 
-            attention = tf.layers.dense(feature_vec,
-                    self.config.embed_size,
-                    activation=tf.nn.tanh,
-                    reuse=reuse)
-
-            attention = tf.layers.dense(attention,
-                    1,
-                    activation=None,
-                    reuse=reuse)
+            attention = tf.contrib.layers.fully_connected(feature_vec,
+                            self.config.embed_size,
+                            activation_fn=tf.nn.tanh,
+                            reuse=reuse, scope="fc1")
+        
+            attention = tf.contrib.layers.fully_connected(attention,
+                            1,
+                            activation_fn=None,
+                            reuse=reuse, scope="fc2")
             
         return attention
 
