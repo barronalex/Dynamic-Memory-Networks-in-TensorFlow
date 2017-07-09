@@ -6,4 +6,5 @@
 *.pyc
 *.zip
 *.xlsx
+*.gz
 dmn_original.py
