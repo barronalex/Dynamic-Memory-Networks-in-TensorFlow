@@ -25,11 +25,11 @@ Run the included shell script to fetch the data
 
 Use 'dmn_train.py' to train the DMN+ model contained in 'dmn_plus.py'
 
-	python dmn_train.py --babi-task-id 2
+	python dmn_train.py --babi_task_id 2
 
 Once training is finished, test the model on a specified task
 
-	python dmn_test.py --babi-task-id 2
+	python dmn_test.py --babi_task_id 2
 
 The l2 regularization constant can be set with -l2-loss (-l). All other parameters were specified by [Xiong et al](https://arxiv.org/abs/1603.01417) and can be found in the 'Config' class in 'dmn_plus.py'.
 
