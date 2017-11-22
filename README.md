@@ -17,7 +17,7 @@ Adapted from Stanford's [cs224d](http://cs224d.stanford.edu/) assignment 2 start
 | `fetch_babi_data.sh` | shell script to fetch bAbI tasks (from [DMNs in Theano](https://github.com/YerevaNN/Dynamic-memory-networks-in-Theano)) |
 
 ## Usage
-Install [TensorFlow r1.0](https://www.tensorflow.org/install/)
+Install [TensorFlow r1.4](https://www.tensorflow.org/install/)
 
 Run the included shell script to fetch the data
 
