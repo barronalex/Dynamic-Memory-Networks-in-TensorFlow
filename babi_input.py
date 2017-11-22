@@ -307,10 +307,7 @@ def load_babi(config, split_sentences=False):
 
     answers = np.stack(answers)
 
-    rel_labels = np.zeros((len(rel_labels), len(rel_labels[0])))
-
-    for i, tt in enumerate(rel_labels):
-        rel_labels[i] = np.array(tt, dtype=int)
+    rel_labels = np.array(rel_labels)
 
     if config.train_mode:
         train = questions[:config.num_train], inputs[:config.num_train], q_lens[:config.num_train], input_lens[:config.num_train], input_masks[:config.num_train], answers[:config.num_train], rel_labels[:config.num_train] 
