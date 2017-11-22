@@ -61,10 +61,9 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
     The input Tensor `t` should be a gradient.
     The output will be `t` + gaussian noise.
     0.001 was said to be a good fixed value for memory networks."""
-    with tf.op_scope([t, stddev], name, "add_gradient_noise") as name:
-        t = tf.convert_to_tensor(t, name="t")
+    with tf.variable_scope('gradient_noise'):
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
-        return tf.add(t, gn, name=name)
+        return tf.add(t, gn)
 
 # from https://github.com/domluna/memn2n
 def _position_encoding(sentence_size, embedding_size):
