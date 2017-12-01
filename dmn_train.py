@@ -19,9 +19,9 @@ args = parser.parse_args()
 
 dmn_type = args.dmn_type if args.dmn_type is not None else "plus"
 
-
 if dmn_type == "plus":
     from dmn_plus import Config
+
     config = Config()
 else:
     raise NotImplementedError(dmn_type + ' DMN type is not currently implemented')
@@ -42,6 +42,7 @@ best_overall_val_loss = float('inf')
 with tf.variable_scope('DMN') as scope:
     if dmn_type == "plus":
         from dmn_plus import DMN_PLUS
+
         model = DMN_PLUS(config)
 
 for run in range(num_runs):
@@ -76,8 +77,8 @@ for run in range(num_runs):
             start = time.time()
 
             train_loss, train_accuracy = model.run_epoch(
-              session, model.train, epoch, train_writer,
-              train_op=model.train_step, train=True)
+                session, model.train, epoch, train_writer,
+                train_op=model.train_step, train=True)
             valid_loss, valid_accuracy = model.run_epoch(session, model.valid)
             print('Training loss: {}'.format(train_loss))
             print('Validation loss: {}'.format(valid_loss))
@@ -94,18 +95,14 @@ for run in range(num_runs):
                     saver.save(session, 'weights/task' + str(model.config.babi_id) + '.weights')
 
             # anneal
-            if train_loss>prev_epoch_loss*model.config.anneal_threshold:
-                model.config.lr/=model.config.anneal_by
-                print('annealed lr to %f'%model.config.lr)
+            if train_loss > prev_epoch_loss * model.config.anneal_threshold:
+                model.config.lr /= model.config.anneal_by
+                print('annealed lr to %f' % model.config.lr)
 
             prev_epoch_loss = train_loss
-
 
             if epoch - best_val_epoch > config.early_stopping:
                 break
             print('Total time: {}'.format(time.time() - start))
 
         print('Best validation accuracy:', best_val_accuracy)
-
-
-
