@@ -20,10 +20,8 @@ args = parser.parse_args()
 
 dmn_type = args.dmn_type if args.dmn_type is not None else "plus"
 
-if dmn_type == "original":
-    from dmn_original import Config
-    config = Config()
-elif dmn_type == "plus":
+
+if dmn_type == "plus":
     from dmn_plus import Config
     config = Config()
 else:
@@ -43,10 +41,7 @@ best_overall_val_loss = float('inf')
 
 # create model
 with tf.variable_scope('DMN') as scope:
-    if dmn_type == "original":
-        from dmn_original import DMN
-        model = DMN(config)
-    elif dmn_type == "plus":
+    if dmn_type == "plus":
         from dmn_plus import DMN_PLUS
         model = DMN_PLUS(config)
 
