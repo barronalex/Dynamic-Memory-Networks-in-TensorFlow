@@ -68,8 +68,8 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
 # from https://github.com/domluna/memn2n
 def _position_encoding(sentence_size, embedding_size):
     """We could have used RNN for parsing sentence but that tends to overfit.
-    The other simpler choice is to take simple sum of embedding but we loose we then loose positional information.
-    Position encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)"""
+    The simpler choice would be to take sum of embedding but we loose loose positional information.
+    Position encoding is described in section 4.1 in "End to End Memory Networks" in more detail (http://arxiv.org/pdf/1503.08895v5.pdf)"""
     encoding = np.ones((embedding_size, sentence_size), dtype=np.float32)
     ls = sentence_size+1
     le = embedding_size+1
@@ -108,7 +108,7 @@ class DMN_PLUS(object):
         preds = tf.nn.softmax(output)
         pred = tf.argmax(preds, 1)
         return pred
-      
+
     def add_loss_op(self, output):
         """Calculate loss"""
         # optional strong supervision of attention with supporting facts
