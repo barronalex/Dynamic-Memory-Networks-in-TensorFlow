@@ -33,7 +33,7 @@ class Config(object):
     noisy_grads = False
 
     word2vec_init = False
-    embedding_init = np.sqrt(3) 
+    embedding_init = np.sqrt(3)
 
     # set to zero with strong supervision to only train gates
     strong_supervision = False
@@ -67,7 +67,9 @@ def _add_gradient_noise(t, stddev=1e-3, name=None):
 
 # from https://github.com/domluna/memn2n
 def _position_encoding(sentence_size, embedding_size):
-    """Position encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)"""
+    """We could have used RNN for parsing sentence but that tends to overfit.
+    The other simpler choice is to take simple sum of embedding but we loose we then loose positional information.
+    Position encoding described in section 4.1 in "End to End Memory Networks" (http://arxiv.org/pdf/1503.08895v5.pdf)"""
     encoding = np.ones((embedding_size, sentence_size), dtype=np.float32)
     ls = sentence_size+1
     le = embedding_size+1
@@ -82,21 +84,22 @@ class DMN_PLUS(object):
     def load_data(self, debug=False):
         """Loads train/valid/test data and sentence encoding"""
         if self.config.train_mode:
-            self.train, self.valid, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
+            self.train, self.valid, self.word_embedding, self.max_q_len, self.max_sentences, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         else:
-            self.test, self.word_embedding, self.max_q_len, self.max_input_len, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
+            self.test, self.word_embedding, self.max_q_len, self.max_sentences, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         self.encoding = _position_encoding(self.max_sen_len, self.config.embed_size)
 
     def add_placeholders(self):
         """add data placeholder to graph"""
         self.question_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_q_len))
-        self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_input_len, self.max_sen_len))
+        self.input_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.max_sentences, self.max_sen_len))
 
         self.question_len_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size,))
         self.input_len_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size,))
 
         self.answer_placeholder = tf.placeholder(tf.int64, shape=(self.config.batch_size,))
 
+        # fact corresponding to answer. Useful for strong supervision
         self.rel_label_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.num_supporting_facts))
 
         self.dropout_placeholder = tf.placeholder(tf.float32)
@@ -172,7 +175,7 @@ class DMN_PLUS(object):
                 sequence_length=self.input_len_placeholder
         )
 
-        # f<-> = f-> + f<-
+        # sum forward and backward output vectors
         fact_vecs = tf.reduce_sum(tf.stack(outputs), axis=0)
 
         # apply dropout
@@ -195,12 +198,12 @@ class DMN_PLUS(object):
                             self.config.embed_size,
                             activation_fn=tf.nn.tanh,
                             reuse=reuse, scope="fc1")
-        
+
             attention = tf.contrib.layers.fully_connected(attention,
                             1,
                             activation_fn=None,
                             reuse=reuse, scope="fc2")
-            
+
         return attention
 
     def generate_episode(self, memory, q_vec, fact_vecs, hop_index):
@@ -216,7 +219,7 @@ class DMN_PLUS(object):
         attentions = tf.expand_dims(attentions, axis=-1)
 
         reuse = True if hop_index > 0 else False
-        
+
         # concatenate fact vectors and attentions for input into attGRU
         gru_inputs = tf.concat([fact_vecs, attentions], 2)
 
