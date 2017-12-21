@@ -144,9 +144,9 @@ class DMN_PLUS(object):
         return train_op
   
 
-    def get_question_representation(self, embeddings):
+    def get_question_representation(self):
         """Get question vectors via embedding and GRU"""
-        questions = tf.nn.embedding_lookup(embeddings, self.question_placeholder)
+        questions = tf.nn.embedding_lookup(self.embeddings, self.question_placeholder)
 
         gru_cell = tf.contrib.rnn.GRUCell(self.config.hidden_size)
         _, q_vec = tf.nn.dynamic_rnn(gru_cell,
@@ -157,10 +157,10 @@ class DMN_PLUS(object):
 
         return q_vec
 
-    def get_input_representation(self, embeddings):
+    def get_input_representation(self):
         """Get fact (sentence) vectors via embedding, positional encoding and bi-directional GRU"""
         # get word vectors from embedding
-        inputs = tf.nn.embedding_lookup(embeddings, self.input_placeholder)
+        inputs = tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
 
         # use encoding to get sentence representation
         inputs = tf.reduce_sum(inputs * self.encoding, 2)
@@ -246,18 +246,15 @@ class DMN_PLUS(object):
     def inference(self):
         """Performs inference on the DMN model"""
 
-        # set up embedding
-        embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
-         
         # input fusion module
         with tf.variable_scope("question", initializer=tf.contrib.layers.xavier_initializer()):
             print('==> get question representation')
-            q_vec = self.get_question_representation(embeddings)
-         
+            q_vec = self.get_question_representation()
+
 
         with tf.variable_scope("input", initializer=tf.contrib.layers.xavier_initializer()):
             print('==> get input representation')
-            fact_vecs = self.get_input_representation(embeddings)
+            fact_vecs = self.get_input_representation()
 
         # keep track of attentions for possible strong supervision
         self.attentions = []
@@ -298,7 +295,7 @@ class DMN_PLUS(object):
         total_steps = len(data[0]) // config.batch_size
         total_loss = []
         accuracy = 0
-        
+
         # shuffle data
         p = np.random.permutation(len(data[0]))
         qp, ip, ql, il, im, a, r = data
@@ -341,6 +338,10 @@ class DMN_PLUS(object):
         self.variables_to_save = {}
         self.load_data(debug=False)
         self.add_placeholders()
+
+        # set up embedding
+        self.embeddings = tf.Variable(self.word_embedding.astype(np.float32), name="Embedding")
+
         self.output = self.inference()
         self.pred = self.get_predictions(self.output)
         self.calculate_loss = self.add_loss_op(self.output)
