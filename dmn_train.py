@@ -8,6 +8,7 @@ import time
 import argparse
 import os
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--babi_task_id", help="specify babi task 1-20 (default=1)")
 parser.add_argument("-r", "--restore", help="restore previously trained weights (default=false)")
