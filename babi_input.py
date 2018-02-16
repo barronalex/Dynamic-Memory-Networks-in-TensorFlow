@@ -141,7 +141,6 @@ def process_input(data_raw, floatX, word2vec, vocab, ivocab, embed_size, split_s
     inputs = []
     answers = []
     input_masks = []
-    relevant_labels = []
     for x in data_raw:
         if split_sentences:
             inp = x["C"].lower().split(' . ') 
@@ -197,9 +196,7 @@ def process_input(data_raw, floatX, word2vec, vocab, ivocab, embed_size, split_s
             else:
                 raise Exception("invalid input_mask_mode")
 
-        relevant_labels.append(x["S"])
-    
-    return inputs, questions, answers, input_masks, relevant_labels 
+    return inputs, questions, answers, input_masks
 
 def get_lens(inputs, split_sentences=False):
     lens = np.zeros((len(inputs)), dtype=int)
@@ -280,7 +277,7 @@ def load_babi(config, split_sentences=False):
     else:
         word_embedding = np.random.uniform(-config.embedding_init, config.embedding_init, (len(ivocab), config.embed_size))
 
-    inputs, questions, answers, input_masks, rel_labels = train_data if config.train_mode else test_data
+    inputs, questions, answers, input_masks = train_data if config.train_mode else test_data
 
     if split_sentences:
         input_lens, sen_lens, max_sen_len = get_sentence_lens(inputs)
@@ -307,17 +304,12 @@ def load_babi(config, split_sentences=False):
 
     answers = np.stack(answers)
 
-    rel_labels = np.array(rel_labels)
-
     if config.train_mode:
-        train = questions[:config.num_train], inputs[:config.num_train], q_lens[:config.num_train], input_lens[:config.num_train], input_masks[:config.num_train], answers[:config.num_train], rel_labels[:config.num_train] 
+        train = questions[:config.num_train], inputs[:config.num_train], q_lens[:config.num_train], input_lens[:config.num_train], input_masks[:config.num_train], answers[:config.num_train]
 
-        valid = questions[config.num_train:], inputs[config.num_train:], q_lens[config.num_train:], input_lens[config.num_train:], input_masks[config.num_train:], answers[config.num_train:], rel_labels[config.num_train:] 
-        return train, valid, word_embedding, max_q_len, max_input_len, max_mask_len, rel_labels.shape[1], len(vocab)
+        valid = questions[config.num_train:], inputs[config.num_train:], q_lens[config.num_train:], input_lens[config.num_train:], input_masks[config.num_train:], answers[config.num_train:]
+        return train, valid, word_embedding, max_q_len, max_input_len, max_mask_len, len(vocab)
 
     else:
-        test = questions, inputs, q_lens, input_lens, input_masks, answers, rel_labels
-        return test, word_embedding, max_q_len, max_input_len, max_mask_len, rel_labels.shape[1], len(vocab)
-
-
-    
+        test = questions, inputs, q_lens, input_lens, input_masks, answers
+        return test, word_embedding, max_q_len, max_input_len, max_mask_len, len(vocab)

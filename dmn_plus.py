@@ -35,10 +35,6 @@ class Config(object):
     word2vec_init = False
     embedding_init = np.sqrt(3)
 
-    # set to zero with strong supervision to only train gates
-    strong_supervision = False
-    beta = 1
-
     # NOTE not currently used hence non-sensical anneal_threshold
     anneal_threshold = 1000
     anneal_by = 1.5
@@ -84,9 +80,9 @@ class DMN_PLUS(object):
     def load_data(self, debug=False):
         """Loads train/valid/test data and sentence encoding"""
         if self.config.train_mode:
-            self.train, self.valid, self.word_embedding, self.max_q_len, self.max_sentences, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
+            self.train, self.valid, self.word_embedding, self.max_q_len, self.max_sentences, self.max_sen_len, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         else:
-            self.test, self.word_embedding, self.max_q_len, self.max_sentences, self.max_sen_len, self.num_supporting_facts, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
+            self.test, self.word_embedding, self.max_q_len, self.max_sentences, self.max_sen_len, self.vocab_size = babi_input.load_babi(self.config, split_sentences=True)
         self.encoding = _position_encoding(self.max_sen_len, self.config.embed_size)
 
     def add_placeholders(self):
@@ -99,9 +95,6 @@ class DMN_PLUS(object):
 
         self.answer_placeholder = tf.placeholder(tf.int64, shape=(self.config.batch_size,))
 
-        # fact corresponding to answer. Useful for strong supervision
-        self.rel_label_placeholder = tf.placeholder(tf.int32, shape=(self.config.batch_size, self.num_supporting_facts))
-
         self.dropout_placeholder = tf.placeholder(tf.float32)
 
     def get_predictions(self, output):
@@ -111,14 +104,7 @@ class DMN_PLUS(object):
 
     def add_loss_op(self, output):
         """Calculate loss"""
-        # optional strong supervision of attention with supporting facts
-        gate_loss = 0
-        if self.config.strong_supervision:
-            for i, att in enumerate(self.attentions):
-                labels = tf.gather(tf.transpose(self.rel_label_placeholder), 0)
-                gate_loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=att, labels=labels))
-
-        loss = self.config.beta*tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=output, labels=self.answer_placeholder)) + gate_loss
+        loss = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=output, labels=self.answer_placeholder))
 
         # add l2 regularization for all variables except biases
         for v in tf.trainable_variables():
@@ -298,8 +284,8 @@ class DMN_PLUS(object):
 
         # shuffle data
         p = np.random.permutation(len(data[0]))
-        qp, ip, ql, il, im, a, r = data
-        qp, ip, ql, il, im, a, r = qp[p], ip[p], ql[p], il[p], im[p], a[p], r[p] 
+        qp, ip, ql, il, im, a = data
+        qp, ip, ql, il, im, a = qp[p], ip[p], ql[p], il[p], im[p], a[p]
 
         for step in range(total_steps):
             index = range(step*config.batch_size,(step+1)*config.batch_size)
@@ -308,7 +294,6 @@ class DMN_PLUS(object):
                   self.question_len_placeholder: ql[index],
                   self.input_len_placeholder: il[index],
                   self.answer_placeholder: a[index],
-                  self.rel_label_placeholder: r[index],
                   self.dropout_placeholder: dp}
             loss, pred, summary, _ = session.run(
               [self.calculate_loss, self.pred, self.merged, train_op], feed_dict=feed)
