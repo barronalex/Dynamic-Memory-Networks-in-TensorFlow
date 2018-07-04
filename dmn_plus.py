@@ -276,7 +276,7 @@ class DMN_PLUS(object):
         config = self.config
         dp = config.dropout
         if train_op is None:
-            train_op = tf.no_op()
+            # train_op = tf.no_op()
             dp = 1
         total_steps = len(data[0]) // config.batch_size
         total_loss = []
@@ -295,8 +295,13 @@ class DMN_PLUS(object):
                   self.input_len_placeholder: il[index],
                   self.answer_placeholder: a[index],
                   self.dropout_placeholder: dp}
-            loss, pred, summary, _ = session.run(
-              [self.calculate_loss, self.pred, self.merged, train_op], feed_dict=feed)
+
+            if train_op is None:
+                loss, pred, summary,  = session.run(
+                    [self.calculate_loss, self.pred, self.merged], feed_dict=feed)
+            else:
+                loss, pred, summary, _ = session.run(
+                    [self.calculate_loss, self.pred, self.merged, train_op], feed_dict=feed)
 
             if train_writer is not None:
                 train_writer.add_summary(summary, num_epoch*total_steps + step)
